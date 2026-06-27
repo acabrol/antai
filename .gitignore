@@ -4,6 +4,10 @@ npm-debug.log*
 .DS_Store
 
 data/logs/
+data/projects/
+data/app/users/
+data/app/groups/*
+!data/app/groups/default.md
 
 .env
 .env.*

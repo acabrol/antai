@@ -22,6 +22,7 @@
       <div class="sidebar-header" style="cursor: pointer;" onclick="app.navigate('dashboard')" title="Go to Dashboard">
         <div class="logo-icon">🐜</div>
         <div class="logo-text">ANTAI</div>
+        <button class="sidebar-close-btn" type="button" onclick="event.stopPropagation(); app.toggleSidebarPane();" title="Hide navigation" aria-label="Hide navigation">✕</button>
       </div>
       <div class="project-selector-container" id="project-selector-container">
         <!-- Will be populated dynamically in app.js -->
@@ -46,7 +47,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
         <div class="logo-text" style="cursor: pointer;" onclick="app.navigate('dashboard')" title="Go to Dashboard">ANTAI</div>
-        <div class="user-avatar" id="mobile-avatar" style="width: 32px; height: 32px; font-size: 12px;">U</div>
+        <button class="mobile-ai-toggle" type="button" onclick="app.toggleAiPane()" title="Toggle AI Assistant" aria-label="Toggle AI Assistant">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2z"></path>
+            <path d="M19 15l.9 2.6L22 18.5l-2.1.9L19 22l-.9-2.6-2.1-.9 2.1-.9L19 15z"></path>
+          </svg>
+        </button>
       </header>
 
       <!-- Views Wrapper -->
@@ -699,10 +705,10 @@
     <div class="card" style="max-width: 600px; margin: 0 auto;">
       <div class="view-header">
         <h3 >Record New Colony</h3>
-        <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
-          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.downloadActiveColonyDataFile()">📥 Download AI Context</button>
-          <button type="button" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;" onclick="app.copyPreparedPromptByKey('colony-overview-fill')">📋 Copy AI Prompt</button>
-          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.triggerAiResultImport()">📤 Upload AI Result</button>
+        <div class="ai-file-actions">
+          <button type="button" class="btn btn-secondary ai-file-action" onclick="app.downloadActiveColonyDataFile()">📥 Download AI Context</button>
+          <button type="button" class="btn btn-primary ai-file-action" onclick="app.copyPreparedPromptByKey('colony-overview-fill')">📋 Copy AI Prompt</button>
+          <button type="button" class="btn btn-secondary ai-file-action" onclick="app.triggerAiResultImport()">📤 Upload AI Result</button>
           <button class="modal-close" style="margin-left: 0;" onclick="app.closeTransientView()">✕</button>
         </div>
       </div>
@@ -1166,10 +1172,10 @@
     <div class="card" style="max-width: 600px; margin: 0 auto;">
       <div class="view-header">
         <h3 >Create New Project</h3>
-        <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
-          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.downloadAiSchema()">📥 Download AI Context</button>
-          <button type="button" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;" onclick="app.copyPreparedPromptByKey('project-setup')">📋 Copy AI Prompt</button>
-          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.triggerAiResultImport()">📤 Upload AI Result</button>
+        <div class="ai-file-actions">
+          <button type="button" class="btn btn-secondary ai-file-action" onclick="app.downloadAiSchema()">📥 Download AI Context</button>
+          <button type="button" class="btn btn-primary ai-file-action" onclick="app.copyPreparedPromptByKey('project-setup')">📋 Copy AI Prompt</button>
+          <button type="button" class="btn btn-secondary ai-file-action" onclick="app.triggerAiResultImport()">📤 Upload AI Result</button>
           <button class="modal-close" style="margin-left: 0;" onclick="app.closeTransientView()">✕</button>
         </div>
       </div>
@@ -1231,7 +1237,7 @@
                 <span>Provider Buttons</span>
                 <span class="ai-action-rollup-hint" id="ai-provider-rollup-hint">Collapse</span>
               </summary>
-                <div class="ai-provider-actions" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="ai-provider-actions">
                   <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('chatgpt')">ChatGPT ↗</button>
                   <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('gemini')">Gemini ↗</button>
                   <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('claude')">Claude ↗</button>

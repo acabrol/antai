@@ -2047,17 +2047,17 @@ class AntaiApp {
     const summary = prompt ? prompt.summary : "";
     const useColonyInsightsWorkflow = this.currentView === "colony-detail" && Boolean(this.selectedColonyId);
     const summaryHtml = summary
-      ? `<span style="font-size:12px; color:var(--text-muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(truncateText(summary, 100))}</span>`
+      ? `<span class="ai-action-summary">${escapeHtml(truncateText(summary, 100))}</span>`
       : "";
     return `
-      <div class="ai-action-bar" style="display:flex; align-items:center; gap:8px; padding:10px 14px; margin:12px 0; border-radius:var(--radius-md); background:linear-gradient(135deg, rgba(212,163,115,0.08), rgba(107,144,128,0.08)); border:1px solid rgba(212,163,115,0.18); flex-wrap:wrap;">
+      <div class="ai-action-bar">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="stroke:var(--accent-primary); flex-shrink:0;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-        <span style="font-size:13px; font-weight:600; color:var(--text-primary); white-space:nowrap;">${escapeHtml(title)}</span>
+        <span class="ai-action-title">${escapeHtml(title)}</span>
         ${summaryHtml}
-        <div style="display:flex; gap:6px; margin-left:auto; flex-shrink:0;">
-          <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px;" onclick="app.downloadActiveColonyDataFile()">📥 1. Download AI Context</button>
-          <button class="btn btn-primary" style="padding:6px 12px; font-size:12px;" onclick="${useColonyInsightsWorkflow ? "app.copyColonyAiInsightsPrompt()" : `app.copyPreparedPromptByKey('${promptKey}')`}">📋 2. Copy AI Prompt</button>
-          <button class="btn btn-secondary" style="padding:6px 12px; font-size:12px;" onclick="app.triggerAiResultImport()">📤 3. Upload AI Result</button>
+        <div class="ai-action-buttons">
+          <button class="btn btn-secondary ai-action-button" onclick="app.downloadActiveColonyDataFile()">📥 1. Download AI Context</button>
+          <button class="btn btn-primary ai-action-button" onclick="${useColonyInsightsWorkflow ? "app.copyColonyAiInsightsPrompt()" : `app.copyPreparedPromptByKey('${promptKey}')`}">📋 2. Copy AI Prompt</button>
+          <button class="btn btn-secondary ai-action-button" onclick="app.triggerAiResultImport()">📤 3. Upload AI Result</button>
         </div>
       </div>`;
   }
