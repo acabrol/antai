@@ -371,6 +371,134 @@ function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
+function isSafeMarkdownUrl(url) {
+  const value = String(url || "").trim();
+  return /^(https?:|mailto:|\/|\.\/|\.\.\/|#)/i.test(value);
+}
+
+function renderMarkdownInline(text) {
+  const tokens = [];
+  let html = escapeHtml(text).replace(/`([^`]+)`/g, (_, code) => {
+    const token = `@@CODE${tokens.length}@@`;
+    tokens.push(`<code>${code}</code>`);
+    return token;
+  });
+
+  html = html.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, label, url) => {
+    const safeUrl = url.replace(/&amp;/g, "&");
+    if (!isSafeMarkdownUrl(safeUrl)) return label;
+    return `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener">${label}</a>`;
+  });
+  html = html
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/_([^_\n]+)_/g, "<em>$1</em>");
+
+  tokens.forEach((tokenHtml, index) => {
+    html = html.replace(`@@CODE${index}@@`, tokenHtml);
+  });
+  return html;
+}
+
+function renderMarkdown(text) {
+  const source = String(text || "").replace(/\r\n/g, "\n").trim();
+  if (!source) return "";
+
+  const lines = source.split("\n");
+  const html = [];
+  let paragraph = [];
+  let listType = null;
+  let inCodeFence = false;
+  let codeLines = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${renderMarkdownInline(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (!listType) return;
+    html.push(`</${listType}>`);
+    listType = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      if (inCodeFence) {
+        html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        codeLines = [];
+        inCodeFence = false;
+      } else {
+        flushParagraph();
+        closeList();
+        inCodeFence = true;
+      }
+      continue;
+    }
+    if (inCodeFence) {
+      codeLines.push(rawLine);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      closeList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      closeList();
+      const level = heading[1].length;
+      html.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      flushParagraph();
+      closeList();
+      html.push("<hr>");
+      continue;
+    }
+
+    const unordered = trimmed.match(/^[-*+]\s+(.+)$/);
+    const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (unordered || ordered) {
+      flushParagraph();
+      const nextType = ordered ? "ol" : "ul";
+      if (listType && listType !== nextType) closeList();
+      if (!listType) {
+        listType = nextType;
+        html.push(`<${listType}>`);
+      }
+      html.push(`<li>${renderMarkdownInline((ordered || unordered)[1])}</li>`);
+      continue;
+    }
+
+    const quote = trimmed.match(/^>\s?(.+)$/);
+    if (quote) {
+      flushParagraph();
+      closeList();
+      html.push(`<blockquote>${renderMarkdownInline(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    paragraph.push(trimmed);
+  }
+
+  if (inCodeFence) {
+    html.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  }
+  flushParagraph();
+  closeList();
+  return `<div class="markdown-rendered">${html.join("")}</div>`;
+}
+
 function truncateText(text, maxLength = 280) {
   const value = String(text || "").replace(/\s+/g, " ").trim();
   if (value.length <= maxLength) return value;
@@ -393,15 +521,17 @@ class AntaiApp {
     this.automationRules = [];
     this.apiKeys = {};
     this.speciesList = [];
+    this.newsFeeds = [];
     this.newsList = [];
+    this.newsSyncStatus = null;
     this.speciesCatalogCacheKey = "antai-species-catalog-v1";
     this.speciesInfoCacheKey = "antai-species-info-v1";
     this.speciesCatalogLoaded = false;
     this.speciesCatalogRefreshPromise = null;
     this.speciesInfoCache = this.readCache(this.speciesInfoCacheKey, {});
     this.liveSpeciesCatalogUpdatedAt = null;
-    this.sidebarCollapsed = this.readCache("antai-sidebar-collapsed-v1", false);
-    this.aiPaneHidden = this.readCache("antai-ai-pane-hidden-v1", false);
+    this.sidebarCollapsed = this.readCache("antai-sidebar-collapsed-v2", true);
+    this.aiPaneHidden = this.readCache("antai-ai-pane-hidden-v2", true);
     this.aiPaneWidth = this.readCache("antai-ai-pane-width-v1", 420);
     this.aiPromptRollupOpen = this.readCache("antai-ai-prompt-rollup-open-v1", true);
     this.aiProviderRollupOpen = this.readCache("antai-ai-provider-rollup-open-v1", true);
@@ -511,6 +641,45 @@ class AntaiApp {
       ].filter(Boolean).map(value => this.getSpeciesCacheNameKey(value));
       return names.includes(query);
     }) || null;
+  }
+
+  mergeSpeciesRecord(record) {
+    if (!record || !record.name) return null;
+    const key = this.getSpeciesCacheNameKey(record.name);
+    const index = this.speciesList.findIndex(species => {
+      return [
+        species.name,
+        species.canonicalName,
+        species.scientificName,
+        species.commonName,
+        species.vernacularName
+      ].filter(Boolean).map(value => this.getSpeciesCacheNameKey(value)).includes(key);
+    });
+    if (index === -1) {
+      this.speciesList.push(record);
+    } else {
+      this.speciesList[index] = { ...this.speciesList[index], ...record };
+    }
+    this.speciesList.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    return index === -1 ? record : this.speciesList[index];
+  }
+
+  async refreshSpeciesSheet(speciesNameOrId) {
+    if (!speciesNameOrId || this.isFileMode()) return this.getSpeciesByName(speciesNameOrId);
+    try {
+      const current = this.speciesList.find(item => item.id === speciesNameOrId) || this.getSpeciesByName(speciesNameOrId);
+      const payload = current && current.id === speciesNameOrId
+        ? { id: current.id }
+        : { speciesName: speciesNameOrId };
+      const updated = await this.apiRequest("/api/species/refresh", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      return this.mergeSpeciesRecord(updated);
+    } catch (err) {
+      console.warn(`Failed to refresh species sheet for ${speciesNameOrId}:`, err);
+      return this.getSpeciesByName(speciesNameOrId);
+    }
   }
 
   normalizeLiveSpeciesEntry(entry) {
@@ -688,21 +857,45 @@ class AntaiApp {
   }
 
   toggleSidebarPane() {
+    const sidebar = document.getElementById("sidebar");
+    const isMobileShell = window.matchMedia("(max-width: 900px)").matches;
+    if (isMobileShell) {
+      const isOpen = Boolean(sidebar && sidebar.classList.contains("active"));
+      this.sidebarCollapsed = false;
+      this.writeCache("antai-sidebar-collapsed-v2", this.sidebarCollapsed);
+      this.applyShellLayout();
+      if (sidebar) sidebar.classList.toggle("active", !isOpen);
+      return;
+    }
+
     this.sidebarCollapsed = !this.sidebarCollapsed;
-    this.writeCache("antai-sidebar-collapsed-v1", this.sidebarCollapsed);
+    this.writeCache("antai-sidebar-collapsed-v2", this.sidebarCollapsed);
+    if (sidebar && this.sidebarCollapsed) sidebar.classList.remove("active");
     this.applyShellLayout();
   }
 
   toggleAiPane() {
     if (this.currentView === "auth") return;
     this.aiPaneHidden = !this.aiPaneHidden;
-    this.writeCache("antai-ai-pane-hidden-v1", this.aiPaneHidden);
+    this.writeCache("antai-ai-pane-hidden-v2", this.aiPaneHidden);
     this.applyShellLayout();
     if (!this.aiPaneHidden) {
       this.renderAIAssistant();
       const input = document.getElementById("ai-prompt-search");
       if (input && window.innerWidth > 900) input.focus();
     }
+  }
+
+  openAiPaneFromNav() {
+    if (this.currentView === "auth" || !this.currentUser) return;
+    this.aiPaneHidden = false;
+    this.writeCache("antai-ai-pane-hidden-v2", this.aiPaneHidden);
+    this.applyShellLayout();
+    this.renderAIAssistant();
+    const input = document.getElementById("ai-prompt-search");
+    if (input && window.innerWidth > 900) input.focus();
+    const sidebar = document.getElementById("sidebar");
+    if (sidebar) sidebar.classList.remove("active");
   }
 
   clampAiPaneWidth(width) {
@@ -2022,7 +2215,7 @@ class AntaiApp {
     if (this.currentView === "auth") return;
     if (!this.aiPaneHidden) return;
     this.aiPaneHidden = false;
-    this.writeCache("antai-ai-pane-hidden-v1", this.aiPaneHidden);
+    this.writeCache("antai-ai-pane-hidden-v2", this.aiPaneHidden);
     this.applyShellLayout();
   }
 
@@ -2495,6 +2688,7 @@ class AntaiApp {
     this.automationRules = snapshot.automationRules || [];
     this.apiKeys = snapshot.apiKeys || {};
     this.speciesList = snapshot.speciesList || [];
+    this.newsFeeds = snapshot.newsFeeds || [];
     this.newsList = snapshot.newsList || [];
   }
 
@@ -2547,29 +2741,7 @@ class AntaiApp {
   }
 
   async loadSpeciesAndNews() {
-    try {
-      const res = await fetch("data/app/species.json");
-      if (res.ok) {
-        this.speciesList = await res.json();
-      } else {
-        throw new Error("HTTP error " + res.status);
-      }
-    } catch (err) {
-      console.error("Failed to load species from data/app/species.json:", err);
-      this.speciesList = [];
-    }
-
-    try {
-      const res = await fetch("data/app/news.json");
-      if (res.ok) {
-        this.newsList = await res.json();
-      } else {
-        throw new Error("HTTP error " + res.status);
-      }
-    } catch (err) {
-      console.error("Failed to load news from data/app/news.json:", err);
-      this.newsList = [];
-    }
+    this.newsList = this.newsList || [];
   }
 
   async resolveGbifSpeciesContext(speciesName) {
@@ -2676,6 +2848,67 @@ class AntaiApp {
     return merged;
   }
 
+  formatSpeciesMarkdownValue(value) {
+    if (value === undefined || value === null || value === "") return "";
+    if (Array.isArray(value)) return value.length ? value.join(", ") : "";
+    if (typeof value === "object") return JSON.stringify(value, null, 2);
+    return String(value);
+  }
+
+  formatSpeciesMarkdownLabel(key) {
+    return String(key || "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, letter => letter.toUpperCase());
+  }
+
+  renderSpeciesMarkdownValue(value) {
+    const formatted = this.formatSpeciesMarkdownValue(value);
+    if (!formatted) return "";
+    if (/^https?:\/\//i.test(formatted)) {
+      return `<a href="${escapeHtml(formatted)}" target="_blank" rel="noopener">${escapeHtml(formatted)}</a>`;
+    }
+    return escapeHtml(formatted);
+  }
+
+  getSpeciesMarkdownRows(speciesContext) {
+    const excluded = new Set(["notes", "desc"]);
+    return Object.entries(speciesContext || {})
+      .filter(([key, value]) => !key.startsWith("_") && !excluded.has(key) && this.formatSpeciesMarkdownValue(value))
+      .sort(([a], [b]) => {
+        const priority = ["id", "name", "scientificName", "canonicalName", "commonName", "vernacularNames", "authorship", "taxonomicStatus", "rank", "kingdom", "phylum", "class", "order", "family", "genus"];
+        const ai = priority.indexOf(a);
+        const bi = priority.indexOf(b);
+        if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+        return a.localeCompare(b);
+      });
+  }
+
+  renderSpeciesMarkdownDetails(speciesContext, options = {}) {
+    if (!speciesContext) return "";
+    const rows = this.getSpeciesMarkdownRows(speciesContext);
+    const body = speciesContext.notes || speciesContext.desc || "";
+    const compact = Boolean(options.compact);
+    return `
+      <div class="species-markdown-data ${compact ? "species-markdown-data-compact" : ""}">
+        ${body ? `
+          <div class="species-markdown-body">
+            <div class="care-section-title">Markdown body</div>
+            <div class="care-section-content">${renderMarkdown(body)}</div>
+          </div>
+        ` : ""}
+        <div class="species-markdown-fields">
+          ${rows.map(([key, value]) => `
+            <div class="species-markdown-row">
+              <span class="species-markdown-key">${escapeHtml(this.formatSpeciesMarkdownLabel(key))}</span>
+              <span class="species-markdown-value">${this.renderSpeciesMarkdownValue(value)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
   renderSpeciesInfoCard(speciesContext) {
     if (!speciesContext) {
       return `<div style="color: var(--text-muted);">No species context available.</div>`;
@@ -2703,6 +2936,7 @@ class AntaiApp {
           <strong>Occurrence samples:</strong> ${escapeHtml(String(speciesContext.occurrenceCount || 0))}<br>
           <strong>Top countries:</strong> ${topCountries}
         </div>
+        ${this.renderSpeciesMarkdownDetails(speciesContext, { compact: true })}
       </div>
     `;
   }
@@ -2738,16 +2972,8 @@ class AntaiApp {
 
     if (contextEl) contextEl.innerHTML = `<div style="color: var(--text-muted);">Loading species context for ${escapeHtml(selectedSpecies)}...</div>`;
 
-    let liveData = null;
-    try {
-      if (this.isOnline()) {
-        liveData = await this.resolveGbifSpeciesContext(selectedSpecies);
-      }
-    } catch (err) {
-      console.warn(`Failed to refresh live species context for ${selectedSpecies}:`, err);
-    }
-
-    const speciesContext = this.buildSpeciesContext(selectedSpecies, liveData);
+    const refreshedSpecies = await this.refreshSpeciesSheet(selectedSpecies);
+    const speciesContext = this.buildSpeciesContext(selectedSpecies, refreshedSpecies);
     if (contextEl) contextEl.innerHTML = this.renderSpeciesInfoCard(speciesContext);
 
     const hints = this.renderSpeciesCareHints(speciesContext);
@@ -2767,15 +2993,8 @@ class AntaiApp {
     if (sidebarEl) {
       sidebarEl.innerHTML = `<div style="font-size:12px; color:var(--text-muted);">Refreshing species context...</div>`;
     }
-    let liveData = null;
-    try {
-      if (this.isOnline()) {
-        liveData = await this.resolveGbifSpeciesContext(targetColony.species);
-      }
-    } catch (err) {
-      console.warn(`Failed to refresh detail species context for ${targetColony.species}:`, err);
-    }
-    const speciesContext = this.buildSpeciesContext(targetColony.species, liveData);
+    const refreshedSpecies = await this.refreshSpeciesSheet(targetColony.species);
+    const speciesContext = this.buildSpeciesContext(targetColony.species, refreshedSpecies);
     contextEl.innerHTML = this.renderSpeciesInfoCard(speciesContext);
     if (sidebarEl) {
       const sidebarLines = [
@@ -3196,14 +3415,55 @@ class AntaiApp {
       }
 
       // Load species & news
+      this.speciesList = [];
+      let speciesPaths = [];
       try {
-        const speciesRes = await fetch(manifest.species);
-        this.speciesList = await speciesRes.json();
+        const indexRes = await fetch(manifest.species);
+        if (indexRes.ok) {
+          const parsed = parseMarkdownWithFrontMatter(await indexRes.text());
+          speciesPaths = parsed.content.split("\n").map(line => {
+            const markdownLink = line.trim().match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
+            if (markdownLink) return `data/species/${markdownLink[2].replace(/^\.\//, "")}`;
+            const plain = line.trim().match(/^-\s+(.+)$/);
+            if (!plain) return null;
+            return `data/species/${sanitizeSlug(plain[1].replace(/\s+-\s+.+$/, "").trim())}.md`;
+          }).filter(Boolean);
+          this.speciesList = parsed.content.split("\n").map(line => {
+            const plain = line.trim().match(/^-\s+(?:\[)?([^\]]+?)(?:\]\([^)]+\))?$/);
+            if (!plain) return null;
+            const name = plain[1].replace(/\s+-\s+.+$/, "").trim();
+            return { id: sanitizeSlug(name), name };
+          }).filter(Boolean);
+        }
       } catch (e) {}
+      for (const speciesPath of speciesPaths) {
+        try {
+          const species = await fetchMD(speciesPath);
+          species.id = species.id || speciesPath.split("/").pop().replace(/\.md$/, "");
+          species.name = species.name || species.scientificName || species.id;
+          this.mergeSpeciesRecord(species);
+        } catch (e) {}
+      }
+      this.speciesList.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
 
       try {
-        const newsRes = await fetch(manifest.news);
-        this.newsList = await newsRes.json();
+        const newsIndexRes = await fetch(manifest.news);
+        if (newsIndexRes.ok) {
+          const parsed = parseMarkdownWithFrontMatter(await newsIndexRes.text());
+          this.newsFeeds = parsed.content.split("\n").map(line => {
+            const trimmed = line.trim();
+            const link = trimmed.match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
+            if (link) return { title: link[1].trim(), url: link[2].trim() };
+            const plain = trimmed.match(/^-\s+(https?:\/\/\S+)/i);
+            if (plain) return { title: "", url: plain[1].trim() };
+            return null;
+          }).filter(Boolean);
+        }
+        const cacheRes = await fetch("data/news/cache/articles.json");
+        if (cacheRes.ok) {
+          const cache = await cacheRes.json();
+          this.newsList = cache.articles || [];
+        }
       } catch (e) {}
 
       // Load sightings
@@ -3745,7 +4005,7 @@ class AntaiApp {
     this.navigate(target.view, target.params || {});
   }
 
-  onViewRender(viewName) {
+  async onViewRender(viewName) {
     switch (viewName) {
       case "dashboard":
         this.renderDashboard();
@@ -3774,17 +4034,11 @@ class AntaiApp {
       case "species-detail":
         this.renderSpeciesDetail();
         break;
-      case "ai-assistant":
-        this.aiPaneHidden = false;
-        this.writeCache("antai-ai-pane-hidden-v1", this.aiPaneHidden);
-        this.applyShellLayout();
-        this.renderAIAssistant();
-        break;
       case "swarm-map":
         this.renderSwarmMap();
         break;
       case "news":
-        this.renderNewsList();
+        await this.renderNewsList();
         break;
       case "projects":
         this.renderProjectsView();
@@ -4314,7 +4568,6 @@ class AntaiApp {
     const isColoniesActive = this.currentView === 'colonies' ? 'active' : '';
     const isRemindersActive = this.currentView === 'reminders' ? 'active' : '';
     const isSpeciesActive = ['species', 'species-detail'].includes(this.currentView) ? 'active' : '';
-    const isAiActive = this.currentView === 'ai-assistant' ? 'active' : '';
     const isMapActive = this.currentView === 'swarm-map' ? 'active' : '';
     const isNewsActive = this.currentView === 'news' ? 'active' : '';
     const isProfileActive = this.currentView === 'profile' ? 'active' : '';
@@ -4353,7 +4606,7 @@ class AntaiApp {
         <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
         Species Sheets
       </a>
-      <a class="nav-item ${isAiActive}" data-view="ai-assistant" onclick="app.navigate('ai-assistant')">
+      <a class="nav-item" data-view="ai-pane" onclick="app.openAiPaneFromNav()">
         <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
         AI Nest Assistant
       </a>
@@ -5423,10 +5676,18 @@ class AntaiApp {
     const query = document.getElementById("species-search-input").value.toLowerCase();
     if (!listEl) return;
 
-    const filtered = this.speciesList.filter(s => 
-      s.name.toLowerCase().includes(query) || 
-      (s.commonName || "").toLowerCase().includes(query)
-    );
+    const filtered = this.speciesList.filter(s => {
+      const haystack = [
+        s.name,
+        s.scientificName,
+        s.canonicalName,
+        s.commonName,
+        s.vernacularName,
+        s.genus,
+        s.family
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
 
     if (filtered.length === 0) {
       listEl.innerHTML = `<div style="grid-column: span 3; text-align: center; padding: 40px; color: var(--text-muted);">No species care sheets match your search.</div>`;
@@ -5441,7 +5702,7 @@ class AntaiApp {
           ${s.notes || s.summary || "Taxonomy and occurrence context can be loaded dynamically from the live species catalog."}
         </p>
         <div style="border-top:1px solid var(--border-color); padding-top:12px; margin-top:12px; display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted);">
-          <span>Founding: ${(s.founding || "Context pending").split(" ")[0]}</span>
+          <span>${s.gbifUpdatedAt ? `GBIF: ${new Date(s.gbifUpdatedAt).toLocaleDateString()}` : "GBIF cache pending"}</span>
           <span>Read Care Sheet →</span>
         </div>
       </div>
@@ -5449,22 +5710,15 @@ class AntaiApp {
   }
 
   async renderSpeciesDetail() {
-    const s = this.speciesList.find(item => item.id === this.selectedSpeciesId);
+    let s = this.speciesList.find(item => item.id === this.selectedSpeciesId);
     const detailEl = document.getElementById("view-species-detail");
     if (!s || !detailEl) {
       this.navigate("species");
       return;
     }
 
-    let liveData = null;
-    try {
-      if (this.isOnline()) {
-        liveData = await this.resolveGbifSpeciesContext(s.name);
-      }
-    } catch (err) {
-      console.warn(`Failed to refresh species detail for ${s.name}:`, err);
-    }
-    const speciesContext = this.buildSpeciesContext(s.name, liveData) || s;
+    s = await this.refreshSpeciesSheet(s.id) || s;
+    const speciesContext = this.buildSpeciesContext(s.name, s) || s;
     const tempRange = speciesContext.tempRange || "No cached husbandry temperature range";
     const humRange = speciesContext.humRange || "No cached husbandry humidity range";
     const founding = speciesContext.founding || "No curated founding guidance cached";
@@ -5472,6 +5726,11 @@ class AntaiApp {
     const diet = speciesContext.diet || "No curated diet guidance cached yet.";
     const growth = speciesContext.growth || `Public occurrence records cached: ${speciesContext.occurrenceCount || 0}`;
     const notes = speciesContext.notes || speciesContext.summary || "No extended notes cached for this species yet.";
+    const sourceLinks = [
+      speciesContext.sourceUrl ? `<a href="${escapeHtml(speciesContext.sourceUrl)}" target="_blank" rel="noopener">GBIF species record</a>` : "",
+      speciesContext.sourceApiUrl ? `<a href="${escapeHtml(speciesContext.sourceApiUrl)}" target="_blank" rel="noopener">GBIF API record</a>` : "",
+      speciesContext.antwebUrl ? `<a href="${escapeHtml(speciesContext.antwebUrl)}" target="_blank" rel="noopener">AntWeb page</a>` : ""
+    ].filter(Boolean);
 
     detailEl.innerHTML = `
       <div class="view-header" style="margin-bottom: 20px;">
@@ -5514,20 +5773,25 @@ class AntaiApp {
         <div class="species-main-care">
           <div class="care-section">
             <div class="care-section-title">🐜 Founding behavior</div>
-            <div class="care-section-content">${founding}</div>
+            <div class="care-section-content">${renderMarkdown(founding)}</div>
           </div>
           <div class="care-section">
             <div class="care-section-title">🍖 Diet & Feeding checklist</div>
-            <div class="care-section-content">${diet}</div>
+            <div class="care-section-content">${renderMarkdown(diet)}</div>
           </div>
           <div class="care-section">
             <div class="care-section-title">⚡ Growth expectations</div>
-            <div class="care-section-content">${growth}</div>
+            <div class="care-section-content">${renderMarkdown(growth)}</div>
           </div>
           <div class="care-section">
             <div class="care-section-title">📝 Practical Care tips</div>
-            <div class="care-section-content">${notes}</div>
+            <div class="care-section-content">${renderMarkdown(notes)}</div>
           </div>
+          <div class="care-section">
+            <div class="care-section-title">Complete Markdown data</div>
+            ${this.renderSpeciesMarkdownDetails(speciesContext)}
+          </div>
+          ${sourceLinks.length ? `<div class="care-section"><div class="care-section-title">Source links</div><div class="care-section-content" style="display:flex; flex-wrap:wrap; gap:10px;">${sourceLinks.join("")}</div></div>` : ""}
         </div>
       </div>
     `;
@@ -5584,25 +5848,183 @@ class AntaiApp {
   }
 
   // News List
-  renderNewsList() {
+  async refreshNewsFromFeeds() {
+    if (this.isFileMode()) return;
+    try {
+      const payload = await this.apiRequest("/api/news/refresh", { method: "POST" });
+      this.newsFeeds = payload.feeds || this.newsFeeds || [];
+      this.newsList = payload.articles || [];
+      this.newsSyncStatus = payload;
+    } catch (err) {
+      console.warn("Failed to refresh RSS news:", err);
+      this.newsSyncStatus = { errors: [{ message: err.message }], fromCache: true };
+    }
+  }
+
+  renderNewsSyncStatus() {
+    const statusEl = document.getElementById("news-sync-status");
+    if (!statusEl) return;
+    const status = this.newsSyncStatus;
+    if (!status) {
+      statusEl.style.display = "none";
+      statusEl.innerHTML = "";
+      return;
+    }
+    const errors = status.errors || [];
+    const hasInfo = status.refreshedAt || status.fromCache || errors.length;
+    if (!hasInfo) {
+      statusEl.style.display = "none";
+      statusEl.innerHTML = "";
+      return;
+    }
+    statusEl.style.display = "";
+    statusEl.innerHTML = `
+      <div class="widget-panel" style="padding:12px 14px; font-size:12px; color:var(--text-secondary);">
+        <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <span>${status.fromCache ? "Showing offline cache for configured feeds." : "RSS feeds synced."}</span>
+          ${status.refreshedAt ? `<span style="color:var(--text-muted);">Last sync: ${new Date(status.refreshedAt).toLocaleString()}</span>` : ""}
+        </div>
+        ${errors.length ? `<div style="margin-top:8px; color:var(--accent-danger);">${errors.map(error => `${escapeHtml(error.url || "Feed")}: ${escapeHtml(error.message || "Sync failed")}`).join("<br>")}</div>` : ""}
+      </div>
+    `;
+  }
+
+  async renderNewsList() {
     const gridEl = document.getElementById("news-grid-container");
     if (!gridEl) return;
+    gridEl.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:18px;">Refreshing RSS feeds and offline cache...</div>`;
+    await this.refreshNewsFromFeeds();
+    this.renderNewsFeedEditor();
+    this.renderNewsSyncStatus();
 
-    gridEl.innerHTML = this.newsList.map(n => `
-      <div class="card" style="cursor:default;">
-        <span class="badge badge-info" style="font-size: 9px; align-self: flex-start; margin-bottom: 12px;">${n.category}</span>
-        <h3 class="card-title">${n.title}</h3>
+    if (!this.newsList.length) {
+      gridEl.innerHTML = `<div style="grid-column:1/-1; color:var(--text-muted); padding:24px; text-align:center;">No RSS articles cached yet. Add RSS feeds with the edit button.</div>`;
+      return;
+    }
+
+    gridEl.innerHTML = this.newsList.map((n, index) => `
+      <div class="card news-card" onclick="app.openCachedNewsArticle(${index})">
+        <span class="badge badge-info" style="font-size: 9px; align-self: flex-start; margin-bottom: 12px;">${escapeHtml(n.category || n.feedTitle || "RSS")}</span>
+        <h3 class="card-title">${escapeHtml(n.title)}</h3>
         <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;">
-          ${n.summary}
+          ${escapeHtml(n.summary)}
         </p>
-        <div style="font-size: 13px; color: var(--text-muted); white-space: pre-line; line-height:1.6; border-top:1px solid var(--border-color); padding-top:16px;">
-          ${n.content}
+        <div style="font-size: 12px; color: var(--text-muted); border-top:1px solid var(--border-color); padding-top:12px;">
+          ${n.fullContentStatus === "ok" ? "Full article cached" : "Feed content cached"}
         </div>
         <div style="font-size: 11px; color: var(--text-muted); margin-top: 16px; text-align: right;">
-          Published: ${n.date}
+          Published: ${n.date ? new Date(n.date).toLocaleString() : "Unknown date"}
         </div>
       </div>
     `).join("");
+  }
+
+  renderNewsFeedEditor() {
+    const editorEl = document.getElementById("news-feed-editor");
+    if (!editorEl) return;
+    const feeds = this.newsFeeds || [];
+    editorEl.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px;">
+        <h3 style="font-size:16px;">RSS feeds</h3>
+        <button class="btn btn-primary" type="button" onclick="app.addNewsFeedRow()">Add Feed</button>
+      </div>
+      <div id="news-feed-rows" style="display:grid; gap:10px;">
+        ${feeds.map((feed, index) => this.renderNewsFeedRow(feed, index)).join("")}
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+        <button class="btn btn-secondary" type="button" onclick="app.toggleNewsFeedEditor(false)">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="app.saveNewsFeeds()">Save Feeds</button>
+      </div>
+    `;
+  }
+
+  renderNewsFeedRow(feed, index) {
+    return `
+      <div class="news-feed-row">
+        <input class="form-control news-feed-title" value="${escapeHtml(feed.title || "")}" placeholder="Feed title">
+        <input class="form-control news-feed-url" value="${escapeHtml(feed.url || "")}" placeholder="https://example.com/feed.xml">
+        <button class="btn btn-secondary" type="button" onclick="app.moveNewsFeed(${index}, -1)">↑</button>
+        <button class="btn btn-secondary" type="button" onclick="app.moveNewsFeed(${index}, 1)">↓</button>
+        <button class="btn btn-secondary" type="button" onclick="app.removeNewsFeed(${index})">Remove</button>
+      </div>
+    `;
+  }
+
+  toggleNewsFeedEditor(forceOpen = null) {
+    const editorEl = document.getElementById("news-feed-editor");
+    if (!editorEl) return;
+    const shouldOpen = forceOpen === null ? editorEl.style.display === "none" : Boolean(forceOpen);
+    editorEl.style.display = shouldOpen ? "" : "none";
+    if (shouldOpen) this.renderNewsFeedEditor();
+  }
+
+  collectNewsFeedsFromEditor() {
+    const rows = Array.from(document.querySelectorAll("#news-feed-rows > div"));
+    return rows.map(row => ({
+      title: row.querySelector(".news-feed-title")?.value.trim() || "",
+      url: row.querySelector(".news-feed-url")?.value.trim() || ""
+    })).filter(feed => feed.url);
+  }
+
+  addNewsFeedRow() {
+    this.newsFeeds = this.collectNewsFeedsFromEditor();
+    this.newsFeeds.push({ title: "", url: "" });
+    this.renderNewsFeedEditor();
+  }
+
+  removeNewsFeed(index) {
+    this.newsFeeds = this.collectNewsFeedsFromEditor();
+    this.newsFeeds.splice(index, 1);
+    this.renderNewsFeedEditor();
+  }
+
+  moveNewsFeed(index, direction) {
+    this.newsFeeds = this.collectNewsFeedsFromEditor();
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= this.newsFeeds.length) return;
+    const [feed] = this.newsFeeds.splice(index, 1);
+    this.newsFeeds.splice(nextIndex, 0, feed);
+    this.renderNewsFeedEditor();
+  }
+
+  async saveNewsFeeds() {
+    this.newsFeeds = this.collectNewsFeedsFromEditor();
+    const payload = await this.apiRequest("/api/news/feeds", {
+      method: "POST",
+      body: JSON.stringify({ feeds: this.newsFeeds })
+    });
+    this.newsFeeds = payload.feeds || [];
+    this.toggleNewsFeedEditor(false);
+    await this.renderNewsList();
+  }
+
+  openCachedNewsArticle(index) {
+    const detailEl = document.getElementById("news-article-detail");
+    const article = this.newsList[index];
+    if (!detailEl || !article) return;
+    const fullContent = article.fullContent || article.content || article.summary || "";
+    detailEl.style.display = "";
+    detailEl.innerHTML = `
+      <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:12px;">
+        <div>
+          <span class="badge badge-info" style="font-size:9px;">${escapeHtml(article.feedTitle || article.category || "RSS")}</span>
+          <h2 style="font-family:var(--font-heading); margin-top:8px;">${escapeHtml(article.fullTitle || article.title)}</h2>
+          <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">${article.date ? new Date(article.date).toLocaleString() : "Unknown date"}${article.fullContentFetchedAt ? ` • Cached ${new Date(article.fullContentFetchedAt).toLocaleString()}` : ""}</div>
+        </div>
+        <button class="modal-close" type="button" onclick="app.closeCachedNewsArticle()">✕</button>
+      </div>
+      <div class="care-section-content">${renderMarkdown(fullContent)}</div>
+      ${article.url ? `<div style="margin-top:16px;"><a class="btn btn-secondary" href="${escapeHtml(article.url)}" target="_blank" rel="noopener">Open original</a></div>` : ""}
+    `;
+    detailEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  closeCachedNewsArticle() {
+    const detailEl = document.getElementById("news-article-detail");
+    if (detailEl) {
+      detailEl.style.display = "none";
+      detailEl.innerHTML = "";
+    }
   }
 
   // User Profile and Rules Settings
@@ -6725,21 +7147,72 @@ class AntaiApp {
         console.warn("Failed to load user profile from workspace:", e);
       }
 
-      // 2. Sync API Keys / Connectors from app/connectors/settings.md
+      // 2. Sync shared species sheets from species/*.md
       try {
-        const appDir = await this.workspaceDir.getDirectoryHandle("app", { create: true });
+        const speciesDir = await this.workspaceDir.getDirectoryHandle("species", { create: true });
+        this.speciesList = [];
         try {
-          const speciesHandle = await appDir.getFileHandle("species.json", { create: false });
-          this.speciesList = JSON.parse(await (await speciesHandle.getFile()).text());
+          const indexHandle = await speciesDir.getFileHandle("index.md", { create: false });
+          const parsed = parseMarkdownWithFrontMatter(await (await indexHandle.getFile()).text());
+          this.speciesList = parsed.content.split("\n").map(line => {
+            const plain = line.trim().match(/^-\s+(?:\[)?([^\]]+?)(?:\]\([^)]+\))?$/);
+            if (!plain) return null;
+            const name = plain[1].replace(/\s+-\s+.+$/, "").trim();
+            return { id: sanitizeSlug(name), name };
+          }).filter(Boolean);
+        } catch (e) {}
+        for await (const entry of speciesDir.values()) {
+          if (entry.kind === "file" && entry.name.endsWith(".md") && entry.name !== "index.md") {
+            const file = await entry.getFile();
+            const parsed = parseMarkdownWithFrontMatter(await file.text());
+            const id = entry.name.replace(/\.md$/, "");
+            this.mergeSpeciesRecord({
+              id,
+              ...parsed.metadata,
+              name: parsed.metadata.name || parsed.metadata.scientificName || id,
+              notes: parsed.content || parsed.metadata.notes || "",
+              desc: parsed.content || parsed.metadata.desc || ""
+            });
+          }
+        }
+        this.speciesList.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      } catch (e) {
+        this.speciesList = [];
+      }
+
+      // 3. Sync RSS news feed setup and offline cache from news/
+      try {
+        const newsDir = await this.workspaceDir.getDirectoryHandle("news", { create: true });
+        try {
+          const indexHandle = await newsDir.getFileHandle("index.md", { create: false });
+          const parsed = parseMarkdownWithFrontMatter(await (await indexHandle.getFile()).text());
+          this.newsFeeds = parsed.content.split("\n").map(line => {
+            const trimmed = line.trim();
+            const link = trimmed.match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
+            if (link) return { title: link[1].trim(), url: link[2].trim() };
+            const plain = trimmed.match(/^-\s+(https?:\/\/\S+)/i);
+            if (plain) return { title: "", url: plain[1].trim() };
+            return null;
+          }).filter(Boolean);
         } catch (e) {
-          this.speciesList = [];
+          this.newsFeeds = [];
         }
         try {
-          const newsHandle = await appDir.getFileHandle("news.json", { create: false });
-          this.newsList = JSON.parse(await (await newsHandle.getFile()).text());
+          const cacheDir = await newsDir.getDirectoryHandle("cache", { create: false });
+          const cacheHandle = await cacheDir.getFileHandle("articles.json", { create: false });
+          const cache = JSON.parse(await (await cacheHandle.getFile()).text());
+          this.newsList = cache.articles || [];
         } catch (e) {
           this.newsList = [];
         }
+      } catch (e) {
+        this.newsFeeds = [];
+        this.newsList = [];
+      }
+
+      // 4. Sync API Keys / Connectors from app/connectors/settings.md
+      try {
+        const appDir = await this.workspaceDir.getDirectoryHandle("app", { create: true });
         const connectorsDir = await appDir.getDirectoryHandle("connectors", { create: true });
         const settingsHandle = await connectorsDir.getFileHandle("settings.md", { create: false });
         const file = await settingsHandle.getFile();
@@ -6953,10 +7426,7 @@ class AntaiApp {
     // Hamburger menu toggle
     const toggleBtn = document.getElementById("menu-toggle-btn");
     if (toggleBtn) {
-      toggleBtn.onclick = () => {
-        const sidebar = document.getElementById("sidebar");
-        if (sidebar) sidebar.classList.toggle("active");
-      };
+      toggleBtn.onclick = () => this.toggleSidebarPane();
     }
 
     // Auth Switch tabs

@@ -464,47 +464,6 @@
           <!-- Rendered via JS -->
         </section>
 
-        <!-- VIEW: AI ASSISTANT -->
-        <section id="view-ai-assistant" class="view">
-          <div class="view-header">
-            <div class="view-title-wrap">
-              <h1>AI Sidecar</h1>
-              <p>The AI assistant now lives in the right dock so it can stay visible while you work through the rest of AntAI.</p>
-            </div>
-            <div style="display:flex; gap:10px;">
-              <button class="btn btn-secondary" onclick="app.toggleAiPane()">Toggle Right Pane</button>
-              <button class="btn btn-secondary" onclick="app.navigate('gemini-key')">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                Gemini API Key
-              </button>
-            </div>
-          </div>
-
-          <div class="widget-panel" style="display:grid; gap:20px;">
-            <div style="font-size:14px; color:var(--text-secondary); line-height:1.6;">
-              Use the right AI dock while browsing colonies, reminders, maps, and sensors. It stays available as a persistent sidecar instead of forcing you into a dedicated screen.
-            </div>
-            <div style="display:flex; flex-wrap:wrap; gap:10px;">
-              <button class="btn btn-primary" onclick="app.toggleAiPane()">Open AI Dock</button>
-              <button class="btn btn-secondary" onclick="app.copyPreparedPromptByKey('care-plan')">Copy Colony Prompt</button>
-            </div>
-            <div class="card-grid">
-              <div class="widget-panel">
-                <h3 class="card-title">Pinned Workflow</h3>
-                <p style="font-size:13px; color:var(--text-secondary); line-height:1.6;">
-                  Keep the assistant visible while editing colony data so you can compare records and responses without changing pages.
-                </p>
-              </div>
-              <div class="widget-panel">
-                <h3 class="card-title">Pane Controls</h3>
-                <p style="font-size:13px; color:var(--text-secondary); line-height:1.6;">
-                  Both the left navigation and the right AI dock can be hidden and reopened from the shell toolbar above.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
         <!-- VIEW: SWARM MAP -->
         <section id="view-swarm-map" class="view">
           <div class="view-header">
@@ -543,7 +502,18 @@
               <h1>Educational & News Portal</h1>
               <p>Husbandry advice, species profiles, wintering tips, and formicarium build guides.</p>
             </div>
+            <button class="btn btn-secondary" type="button" title="Edit RSS feeds" aria-label="Edit RSS feeds" onclick="app.toggleNewsFeedEditor()" style="padding:6px 10px; min-width:38px;">✎</button>
           </div>
+
+          <div id="news-feed-editor" class="widget-panel" style="display:none; margin-bottom:24px;">
+            <!-- Dynamic RSS feed editor -->
+          </div>
+
+          <div id="news-article-detail" class="widget-panel" style="display:none; margin-bottom:24px;">
+            <!-- Dynamic cached article detail -->
+          </div>
+
+          <div id="news-sync-status" style="display:none; margin-bottom:16px;"></div>
 
           <div class="card-grid" id="news-grid-container">
             <!-- Dynamic news articles -->

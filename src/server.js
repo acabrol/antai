@@ -13,6 +13,11 @@ const APP_DIR = path.join(DATA_DIR, "app");
 const USERS_DIR = path.join(APP_DIR, "users");
 const SIGHTINGS_DIR = path.join(APP_DIR, "sightings");
 const CONNECTORS_DIR = path.join(APP_DIR, "connectors");
+const SPECIES_DIR = path.join(DATA_DIR, "species");
+const NEWS_DIR = path.join(DATA_DIR, "news");
+const NEWS_INDEX_FILE = path.join(NEWS_DIR, "index.md");
+const NEWS_CACHE_DIR = path.join(NEWS_DIR, "cache");
+const NEWS_CACHE_FILE = path.join(NEWS_CACHE_DIR, "articles.json");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
 const PASSWD_FILE = path.join(USERS_DIR, "passwd");
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, "settings.md");
@@ -248,6 +253,257 @@ async function listMarkdownFiles(dirPath, extraFactory = () => ({})) {
   }
 }
 
+async function readSpeciesIndexEntries() {
+  const indexPath = path.join(SPECIES_DIR, "index.md");
+  try {
+    const parsed = parseFrontMatter(await fs.readFile(indexPath, "utf8"));
+    return parsed.content
+      .split("\n")
+      .map(line => line.trim())
+      .map(line => {
+        const markdownLink = line.match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
+        if (markdownLink) {
+          return {
+            name: markdownLink[1].trim(),
+            id: sanitizeSlug(path.basename(markdownLink[2], ".md"))
+          };
+        }
+        const plain = line.match(/^-\s+(.+)$/);
+        if (!plain) return null;
+        const name = plain[1].replace(/\s+-\s+.+$/, "").trim();
+        return { name, id: sanitizeSlug(name) };
+      })
+      .filter(Boolean);
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+async function loadSpeciesList() {
+  const indexEntries = await readSpeciesIndexEntries();
+  const species = [];
+  for (const entry of indexEntries) {
+    const fileName = `${entry.id}.md`;
+    let item = { id: entry.id, name: entry.name, _fileName: fileName };
+    try {
+      item = {
+        ...item,
+        ...await readMarkdownRecord(path.join(SPECIES_DIR, fileName), {
+          id: entry.id,
+          _fileName: fileName
+        })
+      };
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+    item.id = item.id || entry.id;
+    item.name = item.name || item.scientificName || entry.name;
+    species.push(item);
+  }
+  return species.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+}
+
+function decodeXmlEntities(text) {
+  return String(text || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .trim();
+}
+
+function stripHtml(text) {
+  return decodeXmlEntities(text).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getXmlTag(block, tagName) {
+  const escaped = tagName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = block.match(new RegExp(`<${escaped}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escaped}>`, "i"));
+  return match ? decodeXmlEntities(match[1]) : "";
+}
+
+function getXmlLink(block) {
+  const atom = block.match(/<link[^>]*href=["']([^"']+)["'][^>]*>/i);
+  if (atom) return decodeXmlEntities(atom[1]);
+  return getXmlTag(block, "link");
+}
+
+function parseFeedItems(xml, feed) {
+  const text = String(xml || "");
+  const channelTitle = stripHtml(getXmlTag(text, "title")) || feed.title || feed.url;
+  const rssBlocks = Array.from(text.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)).map(match => match[1]);
+  const atomBlocks = Array.from(text.matchAll(/<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi)).map(match => match[1]);
+  const blocks = rssBlocks.length ? rssBlocks : atomBlocks;
+
+  return blocks.map((block, index) => {
+    const title = stripHtml(getXmlTag(block, "title")) || "Untitled article";
+    const link = getXmlLink(block);
+    const summary = stripHtml(getXmlTag(block, "description") || getXmlTag(block, "summary") || getXmlTag(block, "content:encoded") || getXmlTag(block, "content"));
+    const dateValue = getXmlTag(block, "pubDate") || getXmlTag(block, "published") || getXmlTag(block, "updated") || "";
+    const parsedDate = dateValue ? new Date(dateValue) : null;
+    const date = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : "";
+    const guid = getXmlTag(block, "guid") || getXmlTag(block, "id") || link || `${feed.url}#${index}`;
+    return {
+      id: crypto.createHash("sha1").update(`${feed.url}:${guid}`).digest("hex"),
+      title,
+      summary: summary || "No summary provided by this RSS feed.",
+      content: summary || "",
+      url: link,
+      date,
+      category: channelTitle,
+      feedTitle: channelTitle,
+      feedUrl: feed.url
+    };
+  });
+}
+
+function getHtmlTitle(html) {
+  return stripHtml((String(html || "").match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "");
+}
+
+function extractReadableArticle(html) {
+  let text = String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+  const article = text.match(/<article[\s\S]*?<\/article>/i);
+  const main = text.match(/<main[\s\S]*?<\/main>/i);
+  if (article) {
+    text = article[0];
+  } else if (main) {
+    text = main[0];
+  } else {
+    const body = text.match(/<body[\s\S]*?<\/body>/i);
+    if (body) text = body[0];
+  }
+  return stripHtml(text);
+}
+
+async function fetchArticleContent(article) {
+  if (!article || !article.url || !/^https?:\/\//i.test(article.url)) return article;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(article.url, {
+      signal: controller.signal,
+      headers: {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Antai local RSS cache"
+      }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const contentType = response.headers.get("content-type") || "";
+    const raw = await response.text();
+    const fullText = contentType.includes("html") ? extractReadableArticle(raw) : stripHtml(raw);
+    return {
+      ...article,
+      fullTitle: getHtmlTitle(raw) || article.title,
+      fullContent: fullText || article.content || article.summary,
+      fullContentFetchedAt: new Date().toISOString(),
+      fullContentStatus: "ok"
+    };
+  } catch (err) {
+    return {
+      ...article,
+      fullContent: article.content || article.summary || "",
+      fullContentFetchedAt: new Date().toISOString(),
+      fullContentStatus: "failed",
+      fullContentError: err.message
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function loadNewsFeeds() {
+  try {
+    const parsed = parseFrontMatter(await fs.readFile(NEWS_INDEX_FILE, "utf8"));
+    return parsed.content.split("\n").map(line => {
+      const trimmed = line.trim();
+      const link = trimmed.match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
+      if (link) return { title: link[1].trim(), url: link[2].trim() };
+      const plain = trimmed.match(/^-\s+(https?:\/\/\S+)/i);
+      if (plain) return { title: "", url: plain[1].trim() };
+      return null;
+    }).filter(feed => feed && /^https?:\/\//i.test(feed.url));
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+async function saveNewsFeeds(feeds) {
+  await ensureDir(NEWS_DIR);
+  const cleanFeeds = (Array.isArray(feeds) ? feeds : [])
+    .map(feed => ({
+      title: String(feed.title || "").trim(),
+      url: String(feed.url || "").trim()
+    }))
+    .filter(feed => /^https?:\/\//i.test(feed.url));
+  const lines = [
+    "# News RSS Feeds",
+    "",
+    "Articles shown in the news page are downloaded from the feeds listed below, in this order.",
+    "",
+    ...cleanFeeds.map(feed => feed.title ? `- [${feed.title}](${feed.url})` : `- ${feed.url}`)
+  ];
+  await fs.writeFile(NEWS_INDEX_FILE, stringifyFrontMatter({ title: "News RSS Feeds" }, lines.join("\n")), "utf8");
+  return cleanFeeds;
+}
+
+async function loadCachedNews() {
+  return readJsonFile(NEWS_CACHE_FILE, { feeds: [], articles: [], refreshedAt: null, errors: [] });
+}
+
+async function refreshNewsFromFeeds() {
+  const feeds = await loadNewsFeeds();
+  const cached = await loadCachedNews();
+  const feedUrls = new Set(feeds.map(feed => feed.url));
+  const cachedForCurrentFeeds = (cached.articles || []).filter(article => feedUrls.has(article.feedUrl));
+  const articles = [];
+  const errors = [];
+
+  for (const feed of feeds) {
+    try {
+      const response = await fetch(feed.url, {
+        headers: {
+          "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "User-Agent": "Antai local RSS cache"
+        }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const xml = await response.text();
+      const feedArticles = parseFeedItems(xml, feed);
+      if (!feedArticles.length) {
+        throw new Error("No RSS or Atom items found in feed response.");
+      }
+      for (const article of feedArticles) {
+        articles.push(await fetchArticleContent(article));
+      }
+    } catch (err) {
+      errors.push({ url: feed.url, message: err.message });
+    }
+  }
+
+  const deduped = Array.from(new Map(articles.map(article => [article.id, article])).values())
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const payload = {
+    feeds,
+    articles: deduped.length ? deduped : cachedForCurrentFeeds,
+    refreshedAt: new Date().toISOString(),
+    errors,
+    fromCache: !deduped.length
+  };
+  await ensureDir(NEWS_CACHE_DIR);
+  await fs.writeFile(NEWS_CACHE_FILE, JSON.stringify(payload, null, 2), "utf8");
+  return payload;
+}
+
 function getSlugNameForRecord(collection, item) {
   if (collection === "colonies") return sanitizeSlug(item.name || "colony");
   if (collection === "events") {
@@ -349,6 +605,132 @@ function getExtensionFromMimeType(mimeType) {
   if (normalized === "image/gif") return ".gif";
   if (normalized === "image/svg+xml") return ".svg";
   return ".bin";
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "Antai local species cache"
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`GBIF request failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function buildGbifSpeciesBody(data) {
+  const lines = [
+    `# ${data.name}`,
+    "",
+    data.summary || "No public GBIF species description is currently available for this species.",
+    "",
+    "## Taxonomy",
+    "",
+    `- Kingdom: ${data.kingdom || "Unknown"}`,
+    `- Phylum: ${data.phylum || "Unknown"}`,
+    `- Class: ${data.class || "Unknown"}`,
+    `- Order: ${data.order || "Unknown"}`,
+    `- Family: ${data.family || "Unknown"}`,
+    `- Genus: ${data.genus || "Unknown"}`,
+    `- Scientific name: ${data.scientificName || data.name}`,
+    `- Authorship: ${data.authorship || "Unknown"}`,
+    `- Taxonomic status: ${data.taxonomicStatus || "Unknown"}`,
+    "",
+    "## Occurrence",
+    "",
+    `- Occurrence records: ${data.occurrenceCount || 0}`,
+    `- Countries: ${Array.isArray(data.topCountries) && data.topCountries.length ? data.topCountries.join(", ") : "Not available"}`,
+    `- Habitats: ${Array.isArray(data.habitats) && data.habitats.length ? data.habitats.join(", ") : "Not specified"}`,
+    "",
+    "## Source",
+    "",
+    `- GBIF species record: ${data.sourceUrl}`,
+    data.antwebUrl ? `- AntWeb page: ${data.antwebUrl}` : ""
+  ];
+  return lines.filter(line => line !== "").join("\n");
+}
+
+function getAntWebSpeciesUrl(name) {
+  const parts = String(name || "").trim().split(/\s+/);
+  if (parts.length < 2) return "https://www.antweb.org/";
+  return `https://www.antweb.org/description.do?genus=${encodeURIComponent(parts[0].toLowerCase())}&species=${encodeURIComponent(parts.slice(1).join(" ").toLowerCase())}&rank=species`;
+}
+
+async function refreshSpeciesSheetFromGbif(speciesName) {
+  const requestedName = String(speciesName || "").trim();
+  if (!requestedName) return null;
+  await ensureDir(SPECIES_DIR);
+
+  const match = await fetchJson(`https://api.gbif.org/v1/species/match?kingdom=Animalia&family=Formicidae&name=${encodeURIComponent(requestedName)}`);
+  const usageKey = match.usageKey || match.speciesKey;
+  if (!usageKey) {
+    throw new Error(`No GBIF species match found for ${requestedName}`);
+  }
+
+  const [detail, descriptions, vernaculars, occurrences] = await Promise.all([
+    fetchJson(`https://api.gbif.org/v1/species/${usageKey}`),
+    fetchJson(`https://api.gbif.org/v1/species/${usageKey}/descriptions`),
+    fetchJson(`https://api.gbif.org/v1/species/${usageKey}/vernacularNames`),
+    fetchJson(`https://api.gbif.org/v1/occurrence/search?taxon_key=${usageKey}&limit=0&facet=country&facetLimit=12`)
+  ]);
+
+  const canonicalName = detail.canonicalName || match.canonicalName || requestedName;
+  const id = sanitizeSlug(canonicalName);
+  const description = Array.isArray(descriptions.results)
+    ? descriptions.results.map(item => stripHtml(item.description)).find(Boolean)
+    : "";
+  const vernacularResults = Array.isArray(vernaculars.results) ? vernaculars.results : [];
+  const englishVernaculars = vernacularResults
+    .filter(item => String(item.language || "").toLowerCase().startsWith("eng"))
+    .map(item => item.vernacularName)
+    .filter(Boolean);
+  const allVernaculars = vernacularResults.map(item => item.vernacularName).filter(Boolean);
+  const vernacularNames = Array.from(new Set([...englishVernaculars, ...allVernaculars])).slice(0, 12);
+  const countryFacet = Array.isArray(occurrences.facets)
+    ? occurrences.facets.find(item => item.field === "COUNTRY" || item.field === "country")
+    : null;
+  const topCountries = countryFacet && Array.isArray(countryFacet.counts)
+    ? countryFacet.counts.slice(0, 12).map(item => item.name || item.value).filter(Boolean)
+    : [];
+
+  const data = {
+    id,
+    name: canonicalName,
+    scientificName: detail.scientificName || match.scientificName || canonicalName,
+    canonicalName,
+    commonName: vernacularNames[0] || "",
+    vernacularNames,
+    authorship: detail.authorship || match.authorship || "",
+    taxonomicStatus: detail.taxonomicStatus || match.status || "",
+    rank: detail.rank || match.rank || "SPECIES",
+    kingdom: detail.kingdom || "Animalia",
+    phylum: detail.phylum || "Arthropoda",
+    class: detail.class || "Insecta",
+    order: detail.order || "Hymenoptera",
+    family: detail.family || "Formicidae",
+    genus: detail.genus || canonicalName.split(/\s+/)[0],
+    parent: detail.parent || "",
+    extinct: Boolean(detail.extinct),
+    habitats: detail.habitats || [],
+    nomenclaturalStatus: detail.nomenclaturalStatus || [],
+    threatStatuses: detail.threatStatuses || [],
+    occurrenceCount: occurrences.count || detail.numOccurrences || 0,
+    topCountries,
+    summary: description || "",
+    gbifKey: usageKey,
+    gbifDatasetKey: detail.datasetKey || "",
+    taxonID: detail.taxonID || `gbif:${usageKey}`,
+    sourceName: "GBIF species API",
+    sourceUrl: `https://www.gbif.org/species/${usageKey}`,
+    sourceApiUrl: `https://api.gbif.org/v1/species/${usageKey}`,
+    antwebUrl: getAntWebSpeciesUrl(canonicalName),
+    gbifUpdatedAt: new Date().toISOString()
+  };
+
+  await fs.writeFile(path.join(SPECIES_DIR, `${id}.md`), stringifyFrontMatter(data, buildGbifSpeciesBody(data)), "utf8");
+  return data;
 }
 
 function parseDataUrl(dataUrl) {
@@ -499,8 +881,10 @@ async function loadBootstrapData() {
   await ensureDir(USERS_DIR);
   const users = await listMarkdownFiles(USERS_DIR);
   const settingsParsed = parseFrontMatter(await fs.readFile(CONNECTORS_FILE, "utf8").catch(() => "---\n---\n"));
-  const speciesList = await readJsonFile(path.join(APP_DIR, "species.json"), []);
-  const newsList = await readJsonFile(path.join(APP_DIR, "news.json"), []);
+  const speciesList = await loadSpeciesList();
+  const newsCache = await loadCachedNews();
+  const newsFeeds = await loadNewsFeeds();
+  const newsList = newsCache.articles || [];
   const sightings = (await listMarkdownFiles(SIGHTINGS_DIR))
     .map(item => ({ ...item, id: item.uuid }));
 
@@ -583,6 +967,7 @@ async function loadBootstrapData() {
     automationRules,
     apiKeys: settingsParsed.metadata.geminiApiKey ? { gemini: settingsParsed.metadata.geminiApiKey } : {},
     speciesList,
+    newsFeeds,
     newsList
   };
 }
@@ -779,6 +1164,13 @@ async function handleWriteRecord(req, res) {
 
   if (collection === "colonies") {
     await materializeColonyPhotos(savedItem, projectSlug);
+    if (savedItem.species) {
+      try {
+        await refreshSpeciesSheetFromGbif(savedItem.species);
+      } catch (err) {
+        console.warn(`Species refresh failed for ${savedItem.species}:`, err.message);
+      }
+    }
   }
 
   if (!savedItem._fileName) {
@@ -793,6 +1185,37 @@ async function handleWriteRecord(req, res) {
     await writeColonyGalleryFile(savedItem, projectSlug);
   }
   sendJson(res, 200, savedItem);
+}
+
+async function handleSpeciesRefresh(req, res) {
+  const { speciesName, id } = await parseJsonBody(req);
+  let name = String(speciesName || "").trim();
+  if (!name && id) {
+    const speciesList = await loadSpeciesList();
+    const match = speciesList.find(item => item.id === id);
+    name = match ? match.name : "";
+  }
+  if (!name) {
+    sendJson(res, 400, { error: "Species name is required." });
+    return;
+  }
+  const species = await refreshSpeciesSheetFromGbif(name);
+  sendJson(res, 200, species);
+}
+
+async function handleNewsFeeds(req, res) {
+  if (req.method === "GET") {
+    sendJson(res, 200, { feeds: await loadNewsFeeds() });
+    return;
+  }
+  const { feeds } = await parseJsonBody(req);
+  const savedFeeds = await saveNewsFeeds(feeds || []);
+  sendJson(res, 200, { feeds: savedFeeds });
+}
+
+async function handleNewsRefresh(res) {
+  const payload = await refreshNewsFromFeeds();
+  sendJson(res, 200, payload);
 }
 
 async function handleUploadColonyPhoto(req, res, colonyId, url) {
@@ -925,6 +1348,18 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/data/write") {
       await handleWriteRecord(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/species/refresh") {
+      await handleSpeciesRefresh(req, res);
+      return;
+    }
+    if ((req.method === "GET" || req.method === "POST") && url.pathname === "/api/news/feeds") {
+      await handleNewsFeeds(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/news/refresh") {
+      await handleNewsRefresh(res);
       return;
     }
     if (req.method === "POST" && url.pathname.startsWith("/api/colonies/") && url.pathname.endsWith("/photos")) {

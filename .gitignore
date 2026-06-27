@@ -4,6 +4,7 @@ npm-debug.log*
 .DS_Store
 
 data/logs/
+data/news/cache/
 data/projects/
 data/app/users/
 data/app/groups/*

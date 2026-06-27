@@ -2,8 +2,8 @@
   "user": "data/app/users/alex-antkeeper.md",
   "passwords": "data/app/users/passwd",
   "connectors": "data/app/connectors/settings.md",
-  "species": "data/app/species.json",
-  "news": "data/app/news.json",
+  "species": "data/species/index.md",
+  "news": "data/news/index.md",
   "sightings": [
     "data/app/sightings/lasius-niger-london-uk.md",
     "data/app/sightings/messor-barbarus-madrid-spain.md"
