@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const { spawn } = require("child_process");
 
 const HOST = process.env.HOST || "127.0.0.1";
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3100);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const PUBLIC_DIR = path.join(PROJECT_ROOT, "public");
 const DATA_DIR = path.join(PROJECT_ROOT, "data");

@@ -5,9 +5,9 @@ services:
     container_name: antai
     environment:
       HOST: 0.0.0.0
-      PORT: 3000
+      PORT: 3100
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_PORT:-3100}:3100"
     volumes:
       - ./data:/app/data
     restart: unless-stopped

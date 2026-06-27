@@ -2,8 +2,8 @@ SHELL := /bin/bash
 
 APP_NAME := antai
 HOST ?= 127.0.0.1
-PORT ?= 3000
-APP_PORT ?= 3000
+PORT ?= 3100
+APP_PORT ?= 3100
 COMPOSE := docker compose
 COMPOSE_FILE := docker-compose.yml
 SERVICE := antai

@@ -5,7 +5,7 @@ Antai is a local-first antkeeping companion app. The repository contains a small
 ## Quick Start
 
 1. Run `make up` or `docker compose up --build`.
-2. Open `http://127.0.0.1:3000`.
+2. Open `http://127.0.0.1:3100`.
 3. Register a user or start from the guest flow.
 
 ## Repository Layout
