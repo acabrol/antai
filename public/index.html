@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antai — Your Premium Antkeeping Companion</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    var app = window.app = window.app || {
+      handleAiSectionToggle() {}
+    };
+  </script>
+</head>
+<body>
+  <div id="app-container">
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar">
+      <div class="sidebar-header" style="cursor: pointer;" onclick="app.navigate('dashboard')" title="Go to Dashboard">
+        <div class="logo-icon">🐜</div>
+        <div class="logo-text">ANTAI</div>
+      </div>
+      <div class="project-selector-container" id="project-selector-container">
+        <!-- Will be populated dynamically in app.js -->
+      </div>
+      <nav class="sidebar-menu" id="sidebar-menu">
+        <!-- Will be dynamically populated for authenticated/guest views -->
+      </nav>
+      <div class="sidebar-footer" id="sidebar-footer">
+        <!-- Will display user profile summary and logout -->
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div id="main-container">
+      <div id="shell-toolbar">
+        <button type="button" class="shell-toggle-btn" id="sidebar-toggle-desktop-btn" onclick="app.toggleSidebarPane()">☰ Navigation</button>
+        <button type="button" class="shell-toggle-btn" id="ai-pane-toggle-btn" onclick="app.toggleAiPane()">🤖 AI Assistant</button>
+      </div>
+      <!-- Mobile Header -->
+      <header id="mobile-header">
+        <button class="menu-toggle" id="menu-toggle-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div class="logo-text" style="cursor: pointer;" onclick="app.navigate('dashboard')" title="Go to Dashboard">ANTAI</div>
+        <div class="user-avatar" id="mobile-avatar" style="width: 32px; height: 32px; font-size: 12px;">U</div>
+      </header>
+
+      <!-- Views Wrapper -->
+      <main id="views-wrapper">
+        <!-- VIEW: PUBLIC HOME -->
+        <section id="view-public-home" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Welcome to Antai</h1>
+              <p>A simple, powerful, AI ready antkeeping companion.</p>
+            </div>
+          </div>
+          <div style="padding: 24px; max-width: 800px; margin: 0 auto; text-align: center;">
+            <h2 style="margin-bottom: 16px;">Discover the amazing world of antkeeping.</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">Explore public ant colonies and projects created by antkeepers around the world.</p>
+            <button class="btn btn-primary" onclick="app.navigate('public-directory')">Browse Public Directory</button>
+          </div>
+        </section>
+
+        <!-- VIEW: PUBLIC DIRECTORY -->
+        <section id="view-public-directory" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Public Directory</h1>
+              <p>Explore public projects and colonies.</p>
+            </div>
+          </div>
+          <div class="card-grid" id="public-directory-container">
+            <!-- Dynamic public cards -->
+          </div>
+        </section>
+
+        <!-- VIEW: PUBLIC PAGE -->
+        <section id="view-public-page" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1 id="public-page-title">...</h1>
+              <p id="public-page-subtitle">...</p>
+            </div>
+            <button class="btn btn-secondary" onclick="app.navigate('public-directory')">Back to Directory</button>
+          </div>
+          <div class="card" style="margin: 24px; padding: 32px;" id="public-page-content">
+            <!-- Dynamic WYSIWYG HTML -->
+          </div>
+        </section>
+
+        <!-- VIEW: AUTH / LANDING -->
+        <section id="view-auth" class="view">
+          <div class="auth-card">
+            <div class="auth-header">
+              <div class="auth-logo">🐜 Antai</div>
+              <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">A simple, powerful, AI ready antkeeping companion.</p>
+
+            </div>
+            <div class="auth-tabs">
+              <div class="auth-tab active" id="auth-tab-login" onclick="app.showAuthTab('login')">Login</div>
+              <div class="auth-tab" id="auth-tab-signup" onclick="app.showAuthTab('signup')">Register</div>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="login-form">
+              <div class="form-group">
+                <label for="login-email">Email Address or Username</label>
+                <input type="text" id="login-email" class="form-control" placeholder="alex@dummy.org or alex_ants" required>
+              </div>
+              <div class="form-group">
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" class="form-control" placeholder="••••••••" required>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Sign In</button>
+            </form>
+
+            <!-- Signup Form -->
+            <form id="signup-form" style="display: none;">
+              <div class="form-group">
+                <label for="signup-username">Username</label>
+                <input type="text" id="signup-username" class="form-control" placeholder="alex_ants" required>
+              </div>
+              <div class="form-group">
+                <label for="signup-email">Email Address</label>
+                <input type="email" id="signup-email" class="form-control" placeholder="alex@dummy.org" required>
+              </div>
+              <div class="form-group">
+                <label for="signup-password">Password</label>
+                <input type="password" id="signup-password" class="form-control" placeholder="••••••••" required>
+              </div>
+              <div class="form-group">
+                <label class="form-checkbox">
+                  <input type="checkbox" id="signup-newsletter" checked>
+                  Subscribe to the monthly antkeeping newsletter
+                </label>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Create Account</button>
+            </form>
+
+            <div style="margin-top: 24px; text-align: center;">
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: DASHBOARD -->
+        <section id="view-dashboard" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Colony Dashboard</h1>
+              <p>Welcome back! Here is what's happening with your colonies today.</p>
+            </div>
+            <button class="btn btn-primary" onclick="app.navigate('add-colony')">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              New Colony
+            </button>
+          </div>
+
+          <div class="dashboard-grid">
+            <!-- Stats row -->
+            <div class="dash-stats-row" id="dash-stats">
+              <!-- Rendered via JS -->
+            </div>
+
+            <!-- Left Main Column -->
+            <div class="dash-main">
+              <!-- Urgent Alerts Banner -->
+              <div id="dashboard-alerts" style="display: none;"></div>
+
+              <!-- Reminders widget -->
+              <div class="widget-panel">
+                <div class="widget-title-bar">
+                  <div class="widget-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    Urgent Care Tasks
+                  </div>
+                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.navigate('reminders')">Manage All</button>
+                </div>
+                <div id="dash-reminders-list">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+
+              <!-- Recent activity widget -->
+              <div class="widget-panel">
+                <div class="widget-title-bar">
+                  <div class="widget-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    Recent Journal Observations
+                  </div>
+                </div>
+                <div id="dash-activity-list" class="timeline">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Sidebar Column -->
+            <div class="dash-side">
+              <!-- Nest Sensors Summary Widget -->
+              <div class="widget-panel">
+                <div class="widget-title-bar">
+                  <div class="widget-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg>
+                    Formicarium Conditions
+                  </div>
+                </div>
+                <div id="dash-sensors-list">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+
+              <!-- Swarm Sightings Widget -->
+              <div class="widget-panel">
+                <div class="widget-title-bar">
+                  <div class="widget-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    Recent Nuptial Swarms
+                  </div>
+                  <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px;" onclick="app.navigate('swarm-map')">View Map</button>
+                </div>
+                <div id="dash-swarm-list">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: COLONIES -->
+        <section id="view-colonies" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>My Colonies</h1>
+              <p>Track growth, feed routines, and environmental history.</p>
+            </div>
+            <button class="btn btn-primary" onclick="app.navigate('add-colony')">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add Colony
+            </button>
+          </div>
+
+          <div class="card-grid" id="colony-list-container">
+            <!-- Dynamic cards -->
+          </div>
+        </section>
+
+        <!-- VIEW: COLONY DETAIL -->
+        <section id="view-colony-detail" class="view">
+          <div class="view-header" style="margin-bottom: 20px;">
+            <button class="btn btn-secondary" style="padding: 8px 12px;" onclick="app.navigate('colonies')">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate(180deg);"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              Back to List
+            </button>
+            <div style="display: flex; gap: 10px;" id="colony-detail-actions">
+              <!-- Filled via JS -->
+            </div>
+          </div>
+
+          <div class="colony-detail-layout">
+            <!-- Sidebar summary -->
+            <div class="colony-info-sidebar" id="colony-detail-sidebar">
+              <!-- Rendered via JS -->
+            </div>
+
+            <!-- Tab Content area -->
+            <div class="colony-detail-main">
+              <div class="tab-bar">
+                <button class="tab-btn active" onclick="app.switchTab(event, 'colony-tab-overview')">Overview</button>
+                <button class="tab-btn" onclick="app.switchTab(event, 'colony-tab-journal')">Journal</button>
+                <button class="tab-btn" onclick="app.switchTab(event, 'colony-tab-reminders')">Reminders</button>
+                <button class="tab-btn" onclick="app.switchTab(event, 'colony-tab-maps')">Nest Maps</button>
+                <button class="tab-btn" onclick="app.switchTab(event, 'colony-tab-gallery')">Gallery</button>
+                <button class="tab-btn" onclick="app.switchTab(event, 'colony-tab-sensors')">Conditions</button>
+                <button class="tab-btn" onclick="app.switchTab(event, 'colony-tab-ai')">AI Insights</button>
+              </div>
+
+              <!-- OVERVIEW TAB -->
+              <div id="colony-tab-overview" class="tab-content active">
+                <div class="widget-panel" style="margin-bottom: 24px;">
+                  <h3 class="card-title">Colony Diary & Description</h3>
+                  <p id="colony-detail-desc" style="font-size: 14.5px; line-height: 1.6; color: var(--text-secondary); white-space: pre-line;"></p>
+                </div>
+                <div class="card-grid">
+                  <div class="widget-panel">
+                    <h3 class="card-title">Setup Details</h3>
+                    <div id="colony-detail-setup-notes" style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; white-space: pre-line;">No setup notes recorded.</div>
+                    <div id="colony-detail-setup-context" style="margin-top: 14px;"></div>
+                  </div>
+                  <div class="widget-panel">
+                    <h3 class="card-title">Dietary Preferences</h3>
+                    <div id="colony-detail-diet" style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; white-space: pre-line;">No food preferences recorded.</div>
+                    <div id="colony-detail-diet-context" style="margin-top: 14px;"></div>
+                  </div>
+                </div>
+                <div class="widget-panel" style="margin-top: 24px;">
+                  <h3 class="card-title">Species Context</h3>
+                  <div id="colony-detail-species-context" style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+                    Species context will appear here once a species is linked to the colony.
+                  </div>
+                </div>
+              </div>
+
+              <!-- JOURNAL TAB -->
+              <div id="colony-tab-journal" class="tab-content">
+                <div style="display: flex; gap: 12px; margin-bottom: 20px; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                  <div style="display: flex; gap: 8px;">
+                    <select id="journal-filter-type" class="form-control" style="width: 150px; padding: 8px;" onchange="app.filterJournal()">
+                      <option value="">All Events</option>
+                      <option value="feeding">Feeding</option>
+                      <option value="cleaning">Cleaning</option>
+                      <option value="observation">Observation</option>
+                      <option value="health">Health Issue</option>
+                      <option value="migration">Move/Migration</option>
+                      <option value="population">Population Update</option>
+                      <option value="setup">Setup Change</option>
+                    </select>
+                    <input type="text" id="journal-search" class="form-control" style="width: 180px; padding: 8px;" placeholder="Search notes..." oninput="app.filterJournal()">
+                  </div>
+                  <button class="btn btn-primary" onclick="app.showAddEventModal()">+ New Observation</button>
+                </div>
+                <div id="colony-journal-timeline" class="timeline">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+
+              <!-- REMINDERS TAB -->
+              <div id="colony-tab-reminders" class="tab-content">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                  <h3 class="card-title" style="margin: 0;">Care Reminders</h3>
+                  <button class="btn btn-primary" onclick="app.showAddColonyReminderModal()">+ New Reminder</button>
+                </div>
+                <div id="colony-reminders-list">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+
+              <!-- MAPS TAB -->
+              <div id="colony-tab-maps" class="tab-content">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                  <h3 class="card-title" style="margin: 0;">Colony Layout Map</h3>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" onclick="app.showAddMapModal()">+ Add Nest Map</button>
+                    <button class="btn btn-primary" onclick="app.showAddZoneModal()">+ Add Mapped Zone</button>
+                  </div>
+                </div>
+                
+                <div id="colony-map-view-wrapper">
+                  <!-- Map selection & Display Rendered via JS -->
+                </div>
+              </div>
+
+              <!-- GALLERY TAB -->
+              <div id="colony-tab-gallery" class="tab-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+                  <div>
+                    <h3 class="card-title" style="margin:0;">Colony Gallery</h3>
+                    <div style="font-size:13px; color:var(--text-secondary); margin-top:6px;">Reorder photos, remove shots, pick the profile image, and inspect EXIF details when they exist.</div>
+                  </div>
+                  <label class="btn btn-primary" id="colony-gallery-add-btn" style="cursor:pointer;">
+                    + Add Pictures
+                    <input type="file" id="colony-gallery-upload" multiple accept="image/*" style="display:none;" onchange="app.handleColonyDetailGallerySelected(event)">
+                  </label>
+                </div>
+                <div id="colony-gallery-empty" class="widget-panel" style="text-align:center; color:var(--text-muted);">
+                  No colony pictures yet. Upload images to build the gallery.
+                </div>
+                <div id="colony-gallery-grid" class="colony-gallery-grid"></div>
+              </div>
+
+              <!-- CONDITIONS/SENSORS TAB -->
+              <div id="colony-tab-sensors" class="tab-content">
+                <div class="card-grid" style="margin-bottom: 24px;">
+                  <div class="widget-panel" id="colony-sensor-status-temp">
+                    <!-- Dynamic -->
+                  </div>
+                  <div class="widget-panel" id="colony-sensor-status-humidity">
+                    <!-- Dynamic -->
+                  </div>
+                </div>
+                <div class="widget-panel">
+                  <div class="widget-title-bar">
+                    <div class="widget-title">Environmental History (Last 24 Hours)</div>
+                    <button class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="app.triggerSensorSimulation()">Trigger Sensor Update</button>
+                  </div>
+                  <div id="colony-sensor-chart-container">
+                    <!-- SVG Chart Rendered via JS -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- AI INSIGHTS TAB -->
+              <div id="colony-tab-ai" class="tab-content">
+                <div class="widget-panel" style="background: linear-gradient(135deg, rgba(212, 163, 115, 0.1), rgba(107, 144, 128, 0.1)); border-color: rgba(212, 163, 115, 0.2); margin-bottom: 24px;">
+                  <h3 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="stroke: var(--accent-primary);"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    AI Nest Advisor Insights
+                  </h3>
+                  <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
+                    Let the AI Advisor inspect your colony's growth logs, reminder performance, temperature data, and breeding metrics to formulate care suggestions.
+                  </p>
+                  <button class="btn btn-primary" onclick="app.generateColonyAIInsights()">Generate Smart Care Recommendations</button>
+                </div>
+                <div id="colony-ai-insights-output">
+                  <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    Click the button above to analyze your colony history and build recommendations.
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: REMINDERS -->
+        <section id="view-reminders" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Care Reminders</h1>
+              <p>Keep your colonies hydrated, fed, and healthy.</p>
+            </div>
+            <button class="btn btn-primary" onclick="app.showAddGeneralReminderModal()">+ Create Reminder</button>
+          </div>
+
+          <div class="tab-bar" style="margin-bottom: 24px;">
+            <button class="tab-btn active" onclick="app.switchReminderTab(event, 'today')">Today</button>
+            <button class="tab-btn" onclick="app.switchReminderTab(event, 'upcoming')">Upcoming</button>
+            <button class="tab-btn" onclick="app.switchReminderTab(event, 'overdue')">Overdue</button>
+            <button class="tab-btn" onclick="app.switchReminderTab(event, 'completed')">Completed</button>
+          </div>
+
+          <div id="reminders-list-container">
+            <!-- Dynamic reminders -->
+          </div>
+        </section>
+
+        <!-- VIEW: SPECIES -->
+        <section id="view-species" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Species Care Sheets</h1>
+              <p>Browse official care instructions, feeding checklists, and nesting parameters.</p>
+            </div>
+            <input type="text" id="species-search-input" class="form-control" style="max-width: 320px;" placeholder="Search species..." oninput="app.renderSpeciesList()">
+          </div>
+
+          <div class="card-grid" id="species-list-container">
+            <!-- Dynamic species cards -->
+          </div>
+        </section>
+
+        <!-- VIEW: SPECIES DETAIL -->
+        <section id="view-species-detail" class="view">
+          <!-- Rendered via JS -->
+        </section>
+
+        <!-- VIEW: AI ASSISTANT -->
+        <section id="view-ai-assistant" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>AI Sidecar</h1>
+              <p>The AI assistant now lives in the right dock so it can stay visible while you work through the rest of AntAI.</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn btn-secondary" onclick="app.toggleAiPane()">Toggle Right Pane</button>
+              <button class="btn btn-secondary" onclick="app.navigate('gemini-key')">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                Gemini API Key
+              </button>
+            </div>
+          </div>
+
+          <div class="widget-panel" style="display:grid; gap:20px;">
+            <div style="font-size:14px; color:var(--text-secondary); line-height:1.6;">
+              Use the right AI dock while browsing colonies, reminders, maps, and sensors. It stays available as a persistent sidecar instead of forcing you into a dedicated screen.
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:10px;">
+              <button class="btn btn-primary" onclick="app.toggleAiPane()">Open AI Dock</button>
+              <button class="btn btn-secondary" onclick="app.copyPreparedPromptByKey('care-plan')">Copy Colony Prompt</button>
+            </div>
+            <div class="card-grid">
+              <div class="widget-panel">
+                <h3 class="card-title">Pinned Workflow</h3>
+                <p style="font-size:13px; color:var(--text-secondary); line-height:1.6;">
+                  Keep the assistant visible while editing colony data so you can compare records and responses without changing pages.
+                </p>
+              </div>
+              <div class="widget-panel">
+                <h3 class="card-title">Pane Controls</h3>
+                <p style="font-size:13px; color:var(--text-secondary); line-height:1.6;">
+                  Both the left navigation and the right AI dock can be hidden and reopened from the shell toolbar above.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: SWARM MAP -->
+        <section id="view-swarm-map" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Nuptial Flight Swarm Map</h1>
+              <p>Track swarming sightings near you, report nuptial flights, and prepare your test tubes.</p>
+            </div>
+            <button class="btn btn-primary" onclick="app.navigate('add-sighting')">Report Flight Sighting</button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 340px; gap: 24px;">
+            <!-- Interactive Map Grid Canvas -->
+            <div class="widget-panel" style="padding: 0; overflow: hidden; position: relative;">
+              <div class="map-canvas-container" style="height: 500px;">
+                <!-- Simulated stylish map -->
+                <div style="width:100%; height:100%; background-color:#141311; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 0); background-size: 24px 24px; position:relative;" id="swarm-map-canvas">
+                  <!-- Flight sightings will be pinned here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- List Sidebar -->
+            <div class="widget-panel" style="display: flex; flex-direction: column; gap: 16px;">
+              <h3 class="card-title">Recent Sightings</h3>
+              <div id="swarm-sightings-list" style="overflow-y: auto; max-height: 420px;">
+                <!-- Rendered via JS -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: NEWS -->
+        <section id="view-news" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Educational & News Portal</h1>
+              <p>Husbandry advice, species profiles, wintering tips, and formicarium build guides.</p>
+            </div>
+          </div>
+
+          <div class="card-grid" id="news-grid-container">
+            <!-- Dynamic news articles -->
+          </div>
+        </section>
+
+        <!-- VIEW: PROJECTS & ACCESS -->
+        <section id="view-projects" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Projects & Access Management</h1>
+              <p>Create separate projects for your colonies and manage access permissions for other users.</p>
+            </div>
+            <button class="btn btn-primary" onclick="app.navigate('create-project')">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              New Project
+            </button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px; margin-top: 16px;">
+            <!-- Active Project Info -->
+            <div class="widget-panel">
+              <h3 class="card-title" style="margin-bottom: 20px;">Active Project Details</h3>
+              <div id="project-details-card">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- Access Control (Sharing) -->
+            <div class="widget-panel">
+              <h3 class="card-title" style="margin-bottom: 20px;">Collaborators & Permissions</h3>
+              <div id="project-sharing-container">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: PROFILE -->
+        <section id="view-profile" class="view">
+          <div class="view-header">
+            <div class="view-title-wrap">
+              <h1>Account Settings & Integration</h1>
+              <p>Manage your preferences, API keys, and home automation integrations.</p>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <!-- User Preferences -->
+            <div class="widget-panel">
+              <h3 class="card-title" style="margin-bottom: 20px;">User Profile</h3>
+              <form id="profile-form">
+                <div class="form-group">
+                  <label for="profile-username">Username</label>
+                  <input type="text" id="profile-username" class="form-control" value="Guest User" required>
+                </div>
+                <div class="form-group">
+                  <label for="profile-email">Email Address</label>
+                  <input type="email" id="profile-email" class="form-control" value="guest@antai.com" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-checkbox">
+                    <input type="checkbox" id="profile-newsletter" checked>
+                    Receive monthly newsletter recommendations
+                  </label>
+                </div>
+                <button type="submit" class="btn btn-primary">Update Profile</button>
+              </form>
+              <div style="border-top: 1px solid var(--border-color); padding-top: 20px; margin-top: 20px;">
+                <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Workspace Directory Sync</h4>
+                <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px;">
+                  Connect your repository's <code>data/</code> directory to read and write records directly as individual, Git-trackable, human-readable JSON files, avoiding concurrent write conflicts.
+                </p>
+                <button class="btn btn-secondary" style="width: 100%;" onclick="app.selectWorkspaceDir()" id="connect-workspace-btn">
+                  📂 Connect data/ Folder
+                </button>
+              </div>
+            </div>
+
+            <!-- Home Automation Connectors -->
+            <div class="widget-panel" style="display: flex; flex-direction: column; gap: 20px;">
+              <div>
+                <h3 class="card-title">Domotic Ecosystem Connectors</h3>
+                <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-top: 4px;">
+                  Map sensors and control relays from your Home Assistant, Jeedom, or Domoticz panels.
+                </p>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <!-- Home Assistant -->
+                <div class="reminder-item">
+                  <div class="reminder-content">
+                    <div style="font-size: 20px;">🏡</div>
+                    <div class="reminder-text-wrap">
+                      <span class="reminder-title" style="font-weight: 600;">Home Assistant</span>
+                      <span class="reminder-meta" id="ha-status-label">Status: Disconnected</span>
+                    </div>
+                  </div>
+                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.toggleConnector('ha')">Connect</button>
+                </div>
+
+                <!-- Jeedom -->
+                <div class="reminder-item">
+                  <div class="reminder-content">
+                    <div style="font-size: 20px;">🤖</div>
+                    <div class="reminder-text-wrap">
+                      <span class="reminder-title" style="font-weight: 600;">Jeedom Connector</span>
+                      <span class="reminder-meta" id="jeedom-status-label">Status: Disconnected</span>
+                    </div>
+                  </div>
+                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.toggleConnector('jeedom')">Connect</button>
+                </div>
+
+                <!-- Domoticz -->
+                <div class="reminder-item">
+                  <div class="reminder-content">
+                    <div style="font-size: 20px;">🎛️</div>
+                    <div class="reminder-text-wrap">
+                      <span class="reminder-title" style="font-weight: 600;">Domoticz Link</span>
+                      <span class="reminder-meta" id="domoticz-status-label">Status: Disconnected</span>
+                    </div>
+                  </div>
+                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.toggleConnector('domoticz')">Connect</button>
+                </div>
+              </div>
+
+              <!-- Plain language Automation rules mapping -->
+              <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 8px;">
+                <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Mapped Automation Routines</h4>
+                <div id="automation-rules-list">
+                  <!-- Rendered via JS -->
+                </div>
+                <button class="btn btn-secondary" style="font-size: 12px; width: 100%; margin-top: 10px;" onclick="app.showAddAutomationModal()">+ Add Automation Rule</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW: DETAILED TABLES -->
+        <section id="view-detailed-table" class="view">
+          <div class="view-header" style="margin-bottom: 20px;">
+            <div class="view-title-wrap">
+              <h1 id="detailed-table-title">Detailed Table View</h1>
+              <p id="detailed-table-subtitle" style="color: var(--text-secondary); font-size:14px; margin-top:4px;">Deep dive into your project statistics and data points.</p>
+            </div>
+            <button class="btn btn-secondary" onclick="app.navigate('dashboard')">
+              ← Back to Dashboard
+            </button>
+          </div>
+
+          <div class="widget-panel" style="margin-top: 16px; overflow-x: auto; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px;">
+            <div id="detailed-table-container">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </section>
+      <!-- MODAL: ADD COLONY -->
+  <div class="view" id="view-add-colony">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Record New Colony</h3>
+        <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.downloadActiveColonyDataFile()">📥 Download AI Context</button>
+          <button type="button" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;" onclick="app.copyPreparedPromptByKey('colony-overview-fill')">📋 Copy AI Prompt</button>
+          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.triggerAiResultImport()">📤 Upload AI Result</button>
+          <button class="modal-close" style="margin-left: 0;" onclick="app.closeTransientView()">✕</button>
+        </div>
+      </div>
+      <form id="add-colony-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="colony-name-input">Colony Name</label>
+            <input type="text" id="colony-name-input" class="form-control" placeholder="Black Garden Nest A" required>
+          </div>
+          <div class="form-group">
+            <label for="colony-project-select">Project</label>
+            <select id="colony-project-select" class="form-control" required>
+              <!-- Filled dynamically in app.js -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="colony-species-select">Species</label>
+            <input type="text" id="colony-species-filter" class="form-control" style="margin-bottom: 10px;" placeholder="Search species by keyword..." oninput="app.filterSpeciesOptions('colony')">
+            <select id="colony-species-select" class="form-control" required>
+              <!-- Filled dynamically in app.js -->
+            </select>
+            <div id="colony-species-status" style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+              Loading available species catalog...
+            </div>
+            <div id="colony-species-context" style="margin-top: 12px; font-size: 12.5px; color: var(--text-secondary);">
+              Select a species to load taxonomy, occurrence, and care context.
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="colony-queens-input">Queen Count</label>
+              <input type="number" id="colony-queens-input" class="form-control" value="1" min="1" required>
+            </div>
+            <div class="form-group">
+              <label for="colony-workers-input">Worker Count</label>
+              <input type="number" id="colony-workers-input" class="form-control" value="0" min="0" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="colony-date-input">Acquisition / founding Date</label>
+            <input type="date" id="colony-date-input" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="colony-status-select">Colony Status</label>
+            <select id="colony-status-select" class="form-control">
+              <option value="healthy">Healthy & Expanding</option>
+              <option value="founding">Founding Stage</option>
+              <option value="hibernation">In Hibernation</option>
+              <option value="decline">Colony Stagnant/Declining</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="colony-notes-input">General Field Notes</label>
+            <textarea id="colony-notes-input" class="form-control" style="height: 80px;" placeholder="Describe founding conditions, background story..."></textarea>
+          </div>
+          <div class="form-group">
+            <label for="colony-diet-input">Food & Diet Preferences</label>
+            <textarea id="colony-diet-input" class="form-control" style="height: 60px;" placeholder="Likes: sugar water, fruit flies. Dislikes: honey..."></textarea>
+            <div id="colony-diet-context" style="margin-top: 10px; font-size: 12px; color: var(--text-muted);">
+              Species-specific diet guidance will appear here when available.
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="colony-setup-input">Formicarium/Setup Notes</label>
+            <textarea id="colony-setup-input" class="form-control" style="height: 60px;" placeholder="Currently in standard 16mm glass test tube nest with water chamber..."></textarea>
+            <div id="colony-setup-context" style="margin-top: 10px; font-size: 12px; color: var(--text-muted);">
+              Species-specific setup and founding context will appear here when available.
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Colony Photo</label>
+            <select id="colony-photo-select" class="form-control">
+              <option value="assets/queen_ant_eggs.jpg">Queen & Eggs (Preset)</option>
+              <option value="assets/ant_nest_workers.jpg">Nest Workers (Preset)</option>
+              <option value="assets/ant_feeding_honey.jpg">Outworld Feeding (Preset)</option>
+            </select>
+            <div style="margin-top: 12px;">
+              <label style="font-size: 13px; color: var(--text-secondary);">Or upload custom photos (select multiple)</label>
+              <input type="file" id="colony-custom-photos" multiple accept="image/*" class="form-control" onchange="app.handleColonyPhotosSelected(event)">
+              <div id="colony-photos-preview" style="display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; padding: 4px;"></div>
+              <input type="hidden" id="colony-selected-photo" value="">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Public Visibility</label>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+              <input type="checkbox" id="colony-is-public" style="width: 16px; height: 16px;">
+              <label for="colony-is-public" style="margin:0; font-weight:normal;">Make this colony public</label>
+            </div>
+            <label>Public Page Content (WYSIWYG)</label>
+            <div class="wysiwyg-toolbar" style="display:flex; gap:5px; margin-bottom:5px; background:var(--bg-card); padding:5px; border-radius:4px; border:1px solid var(--border-color);">
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('bold', false, null)"><b>B</b></button>
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('italic', false, null)"><i>I</i></button>
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('formatBlock', false, 'H3')">H3</button>
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('insertUnorderedList', false, null)">List</button>
+            </div>
+            <div id="colony-public-html" contenteditable="true" class="form-control" style="min-height: 150px; overflow-y:auto; background:var(--bg-input);"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Colony</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: ADD JOURNAL EVENT -->
+  <div class="view" id="view-add-event">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Record Journal Observation</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <form id="add-event-form">
+        <input type="hidden" id="event-colony-id">
+        <div class="modal-body">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="event-type-select">Observation Type</label>
+              <select id="event-type-select" class="form-control" required>
+                <option value="observation">General Observation</option>
+                <option value="feeding">Feeding</option>
+                <option value="cleaning">Cleaning</option>
+                <option value="health">Health Issue</option>
+                <option value="migration">Nest Migration</option>
+                <option value="population">Population Count Update</option>
+                <option value="setup">Setup Configuration Change</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="event-date-input">Date & Time</label>
+              <input type="datetime-local" id="event-date-input" class="form-control" required>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="event-workers-input">New Worker Count (Optional)</label>
+              <input type="number" id="event-workers-input" class="form-control" min="0" placeholder="Unchanged">
+            </div>
+            <div class="form-group">
+              <label for="event-brood-select">Brood Development State</label>
+              <select id="event-brood-select" class="form-control">
+                <option value="">No change / Select state</option>
+                <option value="none">No Brood Present</option>
+                <option value="eggs">Eggs Only</option>
+                <option value="larvae">Eggs & Larvae</option>
+                <option value="pupae">Larvae & Cocoons/Pupae</option>
+                <option value="all">All States Present</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="event-notes-input">Observation Details</label>
+            <textarea id="event-notes-input" class="form-control" style="height: 100px;" placeholder="Describe ant behaviors, food consumption, activity level..." required></textarea>
+          </div>
+          <div class="form-group">
+            <label>Attach Photo (Optional)</label>
+            <select id="event-photo-select" class="form-control">
+              <option value="">No Photo</option>
+              <option value="assets/queen_ant_eggs.jpg">Queen & Eggs (Preset)</option>
+              <option value="assets/ant_nest_workers.jpg">Nest Workers (Preset)</option>
+              <option value="assets/ant_feeding_honey.jpg">Outworld Feeding (Preset)</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Observation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: ADD REMINDER -->
+  <div class="view" id="view-add-reminder">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Schedule Care Task</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <form id="add-reminder-form">
+        <input type="hidden" id="reminder-colony-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="reminder-title-input">Task Title</label>
+            <input type="text" id="reminder-title-input" class="form-control" placeholder="E.g. Feed Sugar Water / Check Humidity" required>
+          </div>
+          <div class="form-group" id="reminder-colony-select-group">
+            <label for="reminder-colony-select">Link to Colony</label>
+            <select id="reminder-colony-select" class="form-control">
+              <!-- Dynamically populated if not editing colony specific -->
+            </select>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="reminder-date-input">Due Date & Time</label>
+              <input type="datetime-local" id="reminder-date-input" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label for="reminder-repeat-select">Repeat Routine</label>
+              <select id="reminder-repeat-select" class="form-control">
+                <option value="none">One-time Task</option>
+                <option value="daily">Every Day</option>
+                <option value="weekly">Every Week</option>
+                <option value="biweekly">Every 2 Weeks</option>
+                <option value="monthly">Every Month</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="reminder-notes-input">Care Advice / Details</label>
+            <textarea id="reminder-notes-input" class="form-control" style="height: 60px;" placeholder="Add details like food dose, water levels..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Reminder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: ADD MAP -->
+  <div class="view" id="view-add-map">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Define Nest Map</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <form id="add-map-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="map-name-input">Map/Layout Title</label>
+            <input type="text" id="map-name-input" class="form-control" placeholder="Outworld & Nest Layout" required>
+          </div>
+          <div class="form-group">
+            <label for="map-image-select">Background Image</label>
+            <select id="map-image-select" class="form-control">
+              <option value="assets/ant_nest_workers.jpg">formicarium chambers (Preset)</option>
+              <option value="assets/ant_feeding_honey.jpg">Outworld arena (Preset)</option>
+              <option value="assets/queen_ant_eggs.jpg">Test tube chamber (Preset)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="map-image-upload">Or Upload Your Own Picture</label>
+            <input type="file" id="map-image-upload" class="form-control" accept="image/*" onchange="app.handleMapImageUploadChange(event)">
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+              Uploaded pictures override the preset background for this nest map.
+            </div>
+          </div>
+          <div class="form-group">
+            <div id="map-image-preview-state" style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+              Using selected preset preview.
+            </div>
+            <img id="map-image-preview" src="assets/ant_nest_workers.jpg" alt="Nest map preview" style="width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Generate Layout Map</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: ADD ZONE -->
+  <div class="view" id="view-add-zone">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Define Mapped Zone</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <form id="add-zone-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="zone-name-input">Zone Name</label>
+            <input type="text" id="zone-name-input" class="form-control" placeholder="E.g. Main Brood Chamber / Feeding Area" required>
+          </div>
+          <div class="form-group">
+            <label for="zone-desc-input">Description / Function</label>
+            <input type="text" id="zone-desc-input" class="form-control" placeholder="E.g. Nest area containing eggs, heated to 26°C" required>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="zone-temp-sensor">Link Temp Sensor</label>
+              <select id="zone-temp-sensor" class="form-control">
+                <option value="">None</option>
+                <option value="sensor-temp-1">Main Temperature Probe 1</option>
+                <option value="sensor-temp-2">Aux Temperature Probe 2</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="zone-hum-sensor">Link Humidity Sensor</label>
+              <select id="zone-hum-sensor" class="form-control">
+                <option value="">None</option>
+                <option value="sensor-hum-1">Chamber Humidity Gauge 1</option>
+                <option value="sensor-hum-2">Aux Humidity Gauge 2</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="zone-x">Horizontal Position (X %)</label>
+              <input type="number" id="zone-x" class="form-control" min="0" max="100" value="30" required>
+            </div>
+            <div class="form-group">
+              <label for="zone-y">Vertical Position (Y %)</label>
+              <input type="number" id="zone-y" class="form-control" min="0" max="100" value="40" required>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="zone-width">Zone Width (%)</label>
+              <input type="number" id="zone-width" class="form-control" min="5" max="100" value="25" required>
+            </div>
+            <div class="form-group">
+              <label for="zone-height">Zone Height (%)</label>
+              <input type="number" id="zone-height" class="form-control" min="5" max="100" value="20" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Define Zone</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: ADD AUTOMATION -->
+  <div class="view" id="view-add-automation">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Define Nest Automation Routine</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <form id="add-automation-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="auto-trigger-select">Condition Trigger</label>
+            <select id="auto-trigger-select" class="form-control" required>
+              <option value="temp-low">Chamber Temperature falls below threshold</option>
+              <option value="temp-high">Chamber Temperature exceeds threshold</option>
+              <option value="hum-low">Chamber Humidity falls below threshold</option>
+              <option value="time-schedule">Daily timed light cycle</option>
+            </select>
+          </div>
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="auto-target-zone">Nest Area/Zone Target</label>
+              <select id="auto-target-zone" class="form-control" required>
+                <!-- Filled dynamically -->
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="auto-threshold">Threshold Value</label>
+              <input type="text" id="auto-threshold" class="form-control" placeholder="E.g. 22°C or 50%" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="auto-action-input">Domotic Command / Action Output</label>
+            <input type="text" id="auto-action-input" class="form-control" placeholder="E.g. Turn on HA Nest Heater Switch" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Deploy Automation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: REPORT SWARM SIGHTING -->
+  <div class="view" id="view-add-sighting">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Report Nuptial Flight</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <form id="add-sighting-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="sight-species">Species (If identified)</label>
+            <input type="text" id="sight-species-filter" class="form-control" style="margin-bottom: 10px;" placeholder="Search species by keyword..." oninput="app.filterSpeciesOptions('sighting')">
+            <select id="sight-species" class="form-control" required>
+              <!-- Filled via app.js -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="sight-location">Sighting Location / City</label>
+            <input type="text" id="sight-location" class="form-control" placeholder="Paris, France / Austin, TX..." required>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="sight-x">Map Position X (0-100%)</label>
+              <input type="number" id="sight-x" class="form-control" min="5" max="95" value="50" required>
+            </div>
+            <div class="form-group">
+              <label for="sight-y">Map Position Y (0-100%)</label>
+              <input type="number" id="sight-y" class="form-control" min="5" max="95" value="50" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="sight-notes">Observation Conditions</label>
+            <textarea id="sight-notes" class="form-control" style="height: 80px;" placeholder="Weather: sunny, 24°C, after storm. Hundreds of queens seen..." required></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Publish Sighting</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- MODAL: GEMINI API KEY -->
+  <div class="view" id="view-gemini-key">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Gemini API Configuration</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;">
+          Antai works locally by default, generating smart advisor recommendations using local analysis rules. To enable <strong>live LLM features</strong> with Gemini (letting you ask arbitrary natural language questions about your colony logs), save your API Key below.
+        </p>
+        <div class="form-group">
+          <label for="gemini-key-input">Gemini API Key</label>
+          <input type="password" id="gemini-key-input" class="form-control" placeholder="AIzaSy...">
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+            Your key is saved locally in your browser's LocalStorage and sent only directly to the Google Gemini API endpoint.
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="app.saveGeminiKey()">Save Key</button>
+      </div>
+    </div>
+  </div>
+
+<!-- MODAL: VIEW MAPPED ZONE DETAIL -->
+  <div class="view" id="view-zone-detail">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3  id="zd-title">Zone Details</h3>
+        <button class="modal-close" onclick="app.closeTransientView()">✕</button>
+      </div>
+      <div class="modal-body" id="zd-body">
+        <!-- Rendered via JS -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Close</button>
+      </div>
+    </div>
+  </div>
+
+<!-- MODAL: CREATE PROJECT -->
+  <div class="view" id="view-create-project">
+    <div class="card" style="max-width: 600px; margin: 0 auto;">
+      <div class="view-header">
+        <h3 >Create New Project</h3>
+        <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.downloadAiSchema()">📥 Download AI Context</button>
+          <button type="button" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;" onclick="app.copyPreparedPromptByKey('project-setup')">📋 Copy AI Prompt</button>
+          <button type="button" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="app.triggerAiResultImport()">📤 Upload AI Result</button>
+          <button class="modal-close" style="margin-left: 0;" onclick="app.closeTransientView()">✕</button>
+        </div>
+      </div>
+      <form id="create-project-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="project-name-input">Project Name</label>
+            <input type="text" id="project-name-input" class="form-control" placeholder="My Experimental Nests" required>
+          </div>
+          <div class="form-group">
+            <label>Public Visibility</label>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+              <input type="checkbox" id="project-is-public" style="width: 16px; height: 16px;">
+              <label for="project-is-public" style="margin:0; font-weight:normal;">Make this project public</label>
+            </div>
+            <label>Public Page Content (WYSIWYG)</label>
+            <div class="wysiwyg-toolbar" style="display:flex; gap:5px; margin-bottom:5px; background:var(--bg-card); padding:5px; border-radius:4px; border:1px solid var(--border-color);">
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('bold', false, null)"><b>B</b></button>
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('italic', false, null)"><i>I</i></button>
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('formatBlock', false, 'H2')">H2</button>
+              <button type="button" class="btn btn-secondary" style="padding:4px 8px; font-size:12px;" onclick="document.execCommand('insertUnorderedList', false, null)">List</button>
+            </div>
+            <div id="project-public-html" contenteditable="true" class="form-control" style="min-height: 150px; overflow-y:auto; background:var(--bg-input);"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="app.closeTransientView()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Project</button>
+        </div>
+      </form>
+    </div>
+  </div>
+      </main>
+    </div>
+
+    <aside id="ai-pane">
+      <div class="ai-pane-resizer" id="ai-pane-resizer" title="Drag to resize the AI pane" aria-hidden="true"></div>
+      <div class="ai-pane-inner">
+        <div class="ai-pane-header">
+          <div class="ai-pane-header-copy">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="ai-pane-title">AI Assistant</div>
+              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 14px; background: transparent; border: none; color: var(--text-muted);" onclick="app.toggleAiPane()" title="Hide AI Assistant">✕</button>
+            </div>
+            
+            <div class="ai-mode-selector" style="display: flex; gap: 4px; margin-top: 12px; background: rgba(0,0,0,0.2); padding: 4px; border-radius: var(--radius-md);">
+              <button class="ai-mode-btn active" id="btn-mode-browser" onclick="app.setAiMode('browser')" style="flex:1; padding: 6px; font-size: 12px; border:none; background: var(--bg-tertiary); color: var(--text-primary); border-radius: 4px; cursor: pointer;">Browser</button>
+              <button class="ai-mode-btn" id="btn-mode-api" onclick="app.setAiMode('api')" style="flex:1; padding: 6px; font-size: 12px; border:none; background: transparent; color: var(--text-secondary); border-radius: 4px; cursor: pointer;">API</button>
+              <button class="ai-mode-btn" id="btn-mode-cli" onclick="app.setAiMode('cli')" style="flex:1; padding: 6px; font-size: 12px; border:none; background: transparent; color: var(--text-secondary); border-radius: 4px; cursor: pointer;">CLI</button>
+            </div>
+            <div class="ai-pane-subtitle" id="ai-mode-desc" style="margin-top: 12px;">Manual copy/paste workflow via external browser tab.</div>
+          </div>
+          
+          <div class="ai-header-controls">
+            <!-- BROWSER MODE VIEW -->
+            <div id="ai-view-browser" class="ai-mode-view active-view">
+            <details class="ai-action-rollup" id="ai-provider-rollup" open ontoggle="app.handleAiSectionToggle('provider', event)">
+              <summary class="ai-action-rollup-summary">
+                <span>Provider Buttons</span>
+                <span class="ai-action-rollup-hint" id="ai-provider-rollup-hint">Collapse</span>
+              </summary>
+                <div class="ai-provider-actions" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('chatgpt')">ChatGPT ↗</button>
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('gemini')">Gemini ↗</button>
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('claude')">Claude ↗</button>
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.openAiProvider('other')">Other ↗</button>
+                </div>
+              </div>
+            </details>
+            <details class="ai-action-rollup" id="ai-utility-rollup" open ontoggle="app.handleAiSectionToggle('utility', event)">
+              <summary class="ai-action-rollup-summary">
+                <span>Utility Buttons</span>
+                <span class="ai-action-rollup-hint" id="ai-utility-rollup-hint">Collapse</span>
+              </summary>
+              <div class="ai-action-rollup-body">
+                <div class="ai-pane-actions">
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.downloadActiveColonyDataFile()">📥 1. Download AI Context</button>
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.downloadAiSchema()">Download AI Schema</button>
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.triggerAiResultImport()">📤 3. Upload AI Result</button>
+                  <button class="btn btn-secondary ai-pane-action-btn" onclick="app.toggleAiPane()">Hide</button>
+                </div>
+              </div>
+            </details>
+            <details class="ai-prompt-rollup" id="ai-prompt-rollup" open ontoggle="app.handleAiSectionToggle('prompt', event)">
+              <summary class="ai-prompt-rollup-summary">
+                <span>Prepared Prompts</span>
+                <span class="ai-prompt-rollup-hint" id="ai-prompt-rollup-hint">Collapse</span>
+              </summary>
+              <div class="ai-prompt-rollup-body">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="ai-prompt-search">Search prompts</label>
+                  <input type="text" id="ai-prompt-search" class="form-control" placeholder="Search prepared prompts..." oninput="app.renderPreparedPromptList()">
+                </div>
+                <div class="ai-prompt-list" id="ai-prompt-list">
+                  <!-- Prepared prompts -->
+                </div>
+              </div>
+            </div>
+            
+            <!-- API MODE VIEW -->
+            <div id="ai-view-api" class="ai-mode-view" style="display: none; flex-direction: column; gap: 16px;">
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Provider API Key</label>
+                <input type="password" id="ai-api-key" class="form-control" placeholder="sk-..." style="width: 100%; margin-bottom: 12px;" onchange="app.saveAiSettings()">
+                
+                <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Provider</label>
+                <select id="ai-api-provider" class="form-control" style="width: 100%; margin-bottom: 12px;" onchange="app.handleApiProviderChange(); app.saveAiSettings()">
+                  <option value="chatgpt">ChatGPT</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="claude">Claude</option>
+                  <option value="other">Other</option>
+                </select>
+
+                <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Model</label>
+                <select id="ai-api-model" class="form-control" style="width: 100%;" onchange="app.saveAiSettings()">
+                  <!-- Dynamically populated by app.handleApiProviderChange() -->
+                </select>
+                <input type="text" id="ai-api-model-other" class="form-control" placeholder="Enter custom model name..." style="width: 100%; display: none;" onchange="app.saveAiSettings()">
+              </div>
+              
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Prompt</label>
+                <textarea id="ai-api-prompt" class="form-control" rows="4" placeholder="Ask AI to analyze data or generate entries..." style="width: 100%; resize: vertical; margin-bottom: 12px;"></textarea>
+                <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="app.runApiMode()">Run AI API</button>
+              </div>
+              
+              <div id="ai-api-result-container" style="display:none; flex-direction: column; gap: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary);">Response</label>
+                <div id="ai-api-result-content" style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: var(--radius-md); font-family: monospace; font-size: 12px; white-space: pre-wrap; overflow-y: auto; max-height: 200px;"></div>
+                <button class="btn btn-secondary" onclick="app.applyApiResult()">Apply Result to AntAI</button>
+              </div>
+            </div>
+
+            <!-- CLI MODE VIEW -->
+            <div id="ai-view-cli" class="ai-mode-view" style="display: none; flex-direction: column; gap: 16px;">
+              <div class="ai-iframe-notice" style="border-color: rgba(99, 102, 241, 0.4); background-color: rgba(99, 102, 241, 0.1); color: #c7d2fe;">
+                <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
+                  CLI Mode uses the selected backend CLI engine (Codex, Claude, or agy). It can read all repository files and autonomously update the data folder for you.
+                </p>
+              </div>
+              
+              <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 16px;">
+                <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">CLI Agent Type</label>
+                <select id="ai-cli-agent" class="form-control" style="width: 100%; margin-bottom: 12px;">
+                  <option value="codex">Codex</option>
+                  <option value="agy">Antigravity (agy)</option>
+                  <option value="claude">Claude</option>
+                </select>
+                
+                <label style="display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Agent Task</label>
+                <textarea id="ai-cli-prompt" class="form-control" rows="4" placeholder="E.g. Create a new log for the Lasius niger colony indicating they ate a mealworm..." style="width: 100%; resize: vertical; margin-bottom: 12px;"></textarea>
+                <button class="btn btn-primary" style="width: 100%; justify-content: center; background-color: #4f46e5; border-color: #4338ca;" onclick="app.runCliMode()">Launch CLI Agent</button>
+              </div>
+              
+              <div id="ai-cli-status" style="font-size: 12px; color: var(--text-muted); font-family: monospace;"></div>
+            </div>
+
+          </div>
+        </div>
+        <input type="file" id="ai-result-import-input" accept="application/json,.json" style="display:none;" onchange="app.handleAiResultFileSelected(event)">
+      </div>
+    </aside>
+  </div>
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  <script src="app.js"></script>
+</body>
+</html>

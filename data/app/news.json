@@ -1,0 +1,26 @@
+[
+  {
+    "id": "news-1",
+    "title": "Founding Queens: The Critical First 3 Months",
+    "summary": "How to avoid the most common mistakes during the claustral founding stage in test tube setups.",
+    "content": "The founding stage is the most vulnerable period for a new ant colony. A newly mated queen has a single goal: rear her first generation of workers (minors) using only her body's fat reserves and wing muscle energy. To support her:\n\n1. Keep her in complete dark. Wrap the test tube in foil or cardboard.\n2. Limit inspections to once every 2 weeks. Vibrations and light scare the queen, causing her to eat her own eggs.\n3. Do not feed. Claustral queens do not need food until workers emerge. Adding food only causes mold growth.\n4. Ensure humidity. The water chamber behind the cotton plug must be clean and not leaking.",
+    "date": "2026-06-20",
+    "category": "Husbandry Guide"
+  },
+  {
+    "id": "news-2",
+    "title": "Understanding Hibernation (Diapause) Requirements",
+    "summary": "Why temperate species need a cold rest, and how to safely winter your colonies.",
+    "content": "For temperate ant species like Lasius niger or Messor barbarus, hibernation (diapause) is a biological necessity triggered by seasonal changes. Without it, the queen's egg-laying rate drops, worker lifespan decreases, and the colony eventually collapses.\n\nKey steps for successful diapause:\n- Prepare in Autumn: Gradually lower temperatures. Stop feeding proteins; feed sugars.\n- Cooling: Keep colonies between 5°C and 10°C. Mini-fridges, cellars, or insulated garages work well.\n- Water Check: Ensure the water reservoir does not dry out. Dry air kills ants faster than cold temperatures.\n- Duration: Maintain diapause for 3 to 4 months (usually November to March). Do not disturb them during this time.",
+    "date": "2026-05-15",
+    "category": "Seasonal Advice"
+  },
+  {
+    "id": "news-3",
+    "title": "Formicarium Hydration Systems Compared",
+    "summary": "An in-depth look at Gypsum, Ytong, Acrylic, and 3D Printed Nest humidification.",
+    "content": "Hydration is the single most important aspect of formicarium design. Ants require high relative humidity to prevent eggs and larvae from drying out. Here is how the materials compare:\n\n- Ytong (Autoclaved Aerated Concrete): Excellent water absorption and capillary pull. Easy to create gradients, but holds mold easily if not ventilated.\n- Gypsum (Plaster): Very natural feel, retains moisture well, resists mold slightly better than Ytong, but can be chewed through by leafcutters or harvester species.\n- Acrylic Nests: Zero absorption. Relies on water chambers underneath steel mesh. Very clean and escape-proof, but harder to establish a fine humidity gradient.\n- 3D Printed (PLA/PETG): Combined with plaster or sponge reservoirs. Offers complete structural freedom and easy modular expansions.",
+    "date": "2026-04-10",
+    "category": "Equipment Review"
+  }
+]

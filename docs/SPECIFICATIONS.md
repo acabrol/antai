@@ -579,6 +579,38 @@ The list must allow users to quickly understand:
 - responses must remain usable in CLI workflows
 - the same core information must be accessible regardless of interface mode
 
+#### LLM Workflow Mechanism
+
+To ensure maximum interoperability with LLMs without requiring API keys or backend integrations, the application must support a universal export/prompt/import workflow on every page and form (excluding authentication views like login and register).
+
+- **Download Phase:** Any view must allow downloading an `antai.ai.context/v1` JSON context file. This file contains the relevant context for the current view (e.g., active colony data, recent events, sensor history, schema template, and LLM instructions).
+- **Prompt Phase:** The view must provide an "AI Action Bar" or similar mechanism with a "Copy Prompt" action. This copies a view-specific, prepared markdown prompt that instructs the LLM on what to analyze and explicitly requests a structured JSON response matching the import schema. The user pastes this prompt along with the downloaded context file into their preferred LLM (ChatGPT, Gemini, Claude, etc.).
+- **Upload Phase:** The user downloads or copies the JSON response from the LLM and uploads it back into the application via an "Upload Result" action on the same page/form. The application parses and applies the structural changes (e.g., updating colony notes, creating reminders, adding journal entries).
+
+#### File Format Standards
+
+- **Context Export Format (`antai.ai.context/v1`):**
+  - Must include `schemaVersion: "antai.ai.context/v1"`.
+  - Must contain the full required data context for the active view (e.g., `project`, `selectedColony`, `speciesContext`, `reminders`, `recentEvents`).
+  - Must include `aiImportInstructions` and the `aiImportSchema` template to instruct the LLM on the expected return format.
+  - File extension: `.json`
+- **Result Import Format (`antai.ai.result/v1`):**
+  - Must include `schemaVersion: "antai.ai.result/v1"`.
+  - Must include a `colonies` array containing objects with a `colonyRef` (matching by id or name).
+  - Supported updates per colony include:
+    - `updates`: Object containing scalar overwrites (`status`, `workerCount`) and appendable strings (`notesAppend`, `setupAppend`, `dietAppend`).
+    - `remindersToCreate`: Array of objects (`title`, `dueDate`, `repeat`, `notes`).
+    - `journalEntriesToCreate`: Array of objects (`type`, `dateTime`, `notes`, `workers`, `broodState`).
+  - File extension: `.json`
+
+#### Recommendations for Prompt Creation
+
+- **Context-Aware:** Prompts must use template variables (e.g., `{{colonyName}}`, `{{speciesName}}`, `{{projectName}}`) to dynamically inject the active context into the prompt text before copying.
+- **Clear Instructions:** The prompt must clearly state its goal (e.g., "Analyze recent sensor data and suggest a care plan").
+- **Schema Enforcement:** The prompt must explicitly instruct the LLM to return a fenced \`\`\`json block that matches the `antai.ai.result/v1` schema provided in the context file.
+- **Fallback Behavior:** Prompts should instruct the LLM to return an empty `colonies` array if no structured updates are necessary, rather than returning invalid or missing JSON.
+- **Separation of Concerns:** Keep prompts focused on single tasks (e.g., "Colony Overview Auto-Fill" vs "Journal Entry Generator") to prevent overwhelming the LLM and to ensure predictable JSON outputs.
+
 ### 8.16 Swarm Map Module
 
 #### Responsibilities

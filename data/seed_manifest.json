@@ -1,0 +1,46 @@
+{
+  "user": "data/app/users/alex-antkeeper.md",
+  "passwords": "data/app/users/passwd",
+  "connectors": "data/app/connectors/settings.md",
+  "species": "data/app/species.json",
+  "news": "data/app/news.json",
+  "sightings": [
+    "data/app/sightings/lasius-niger-london-uk.md",
+    "data/app/sightings/messor-barbarus-madrid-spain.md"
+  ],
+  "colonies": [
+    {
+      "colony": "data/projects/default-project/messor-kingdom/colony.md",
+      "events": [
+        "data/projects/default-project/messor-kingdom/events/feeding-2026-06-22.md",
+        "data/projects/default-project/messor-kingdom/events/cleaning-2026-06-24.md"
+      ],
+      "reminders": [
+        "data/projects/default-project/messor-kingdom/reminders/check-nest-moisture-level.md",
+        "data/projects/default-project/messor-kingdom/reminders/protein-feed-crickets.md"
+      ],
+      "maps": [
+        "data/projects/default-project/messor-kingdom/maps/main-formicarium-chambers.md"
+      ],
+      "zones": [
+        "data/projects/default-project/messor-kingdom/zones/brood-nest-area.md",
+        "data/projects/default-project/messor-kingdom/zones/granary-storage.md"
+      ],
+      "rules": [
+        "data/projects/default-project/messor-kingdom/rules/rule-temp-low.md"
+      ]
+    },
+    {
+      "colony": "data/projects/default-project/founding-lasius/colony.md",
+      "events": [
+        "data/projects/default-project/founding-lasius/events/observation-2026-06-23.md"
+      ],
+      "reminders": [
+        "data/projects/default-project/founding-lasius/reminders/feed-honey-water.md"
+      ],
+      "maps": [],
+      "zones": [],
+      "rules": []
+    }
+  ]
+}

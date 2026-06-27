@@ -1,0 +1,13 @@
+services:
+  antai:
+    build:
+      context: .
+    container_name: antai
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
