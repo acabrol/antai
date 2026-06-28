@@ -59,16 +59,51 @@
       <main id="views-wrapper">
         <!-- VIEW: PUBLIC HOME -->
         <section id="view-public-home" class="view">
-          <div class="view-header">
-            <div class="view-title-wrap">
-              <h1>Welcome to Antai</h1>
-              <p>A simple, powerful, AI ready antkeeping companion.</p>
+          <div class="public-home-shell">
+            <div class="public-home-hero">
+              <div class="public-home-copy">
+                <div class="public-home-eyebrow">Local-first antkeeping companion</div>
+                <h1>Track every colony like it matters, because it does.</h1>
+                <p class="public-home-lead">
+                  Antai gives antkeepers one calm place to log colony history, manage care reminders, monitor nest conditions,
+                  study species guidance, and use AI when they want sharper insight.
+                </p>
+                <p class="public-home-supporting">
+                  Built for daily husbandry, long-term observation, and serious records without turning your setup into a generic admin tool.
+                </p>
+                <div class="public-home-actions">
+                  <button class="btn btn-primary" onclick="app.navigate('auth')">Login/Register</button>
+                  <button class="btn btn-secondary" onclick="app.navigate('public-directory')">Browse Public Pages</button>
+                </div>
+              </div>
+              <div class="public-home-highlight card">
+                <div class="public-home-highlight-label">Inside Antai</div>
+                <h2>Your colonies, context, and next actions in one workspace.</h2>
+                <ul class="public-home-feature-list">
+                  <li>Journal feedings, brood changes, observations, and setup milestones.</li>
+                  <li>Stay ahead with reminders, species care notes, and environment tracking.</li>
+                  <li>Bring in AI for summaries, analysis, and colony-aware recommendations.</li>
+                </ul>
+              </div>
             </div>
-          </div>
-          <div style="padding: 24px; max-width: 800px; margin: 0 auto; text-align: center;">
-            <h2 style="margin-bottom: 16px;">Discover the amazing world of antkeeping.</h2>
-            <p style="color: var(--text-secondary); margin-bottom: 24px;">Explore public ant colonies and projects created by antkeepers around the world.</p>
-            <button class="btn btn-primary" onclick="app.navigate('public-directory')">Browse Public Directory</button>
+
+            <div class="public-home-grid">
+              <article class="card public-home-card">
+                <div class="public-home-card-kicker">Daily care</div>
+                <h3>Keep clean records without friction</h3>
+                <p>Capture what changed today, what needs attention next, and how each colony is progressing over time.</p>
+              </article>
+              <article class="card public-home-card">
+                <div class="public-home-card-kicker">Better decisions</div>
+                <h3>See patterns before they become problems</h3>
+                <p>Connect reminders, photos, species guidance, sensors, and maps so care decisions are grounded in real context.</p>
+              </article>
+              <article class="card public-home-card">
+                <div class="public-home-card-kicker">Optional AI</div>
+                <h3>Ask sharper questions with colony-aware context</h3>
+                <p>Use prepared prompts and structured context to get useful help from AI without giving up control of your data.</p>
+              </article>
+            </div>
           </div>
         </section>
 
@@ -104,7 +139,7 @@
           <div class="auth-card">
             <div class="auth-header">
               <div class="auth-logo">🐜 Antai</div>
-              <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">A simple, powerful, AI ready antkeeping companion.</p>
+              <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">Your local-first workspace for colony tracking, care routines, species guidance, and optional AI help.</p>
 
             </div>
             <div class="auth-tabs">
@@ -380,6 +415,9 @@
 
               <!-- CONDITIONS/SENSORS TAB -->
               <div id="colony-tab-sensors" class="tab-content">
+                <div class="widget-panel" id="colony-sensor-connector-panel" style="margin-bottom: 24px;">
+                  <!-- Rendered via JS -->
+                </div>
                 <div class="card-grid" style="margin-bottom: 24px;">
                   <div class="widget-panel" id="colony-sensor-status-temp">
                     <!-- Dynamic -->
@@ -390,8 +428,8 @@
                 </div>
                 <div class="widget-panel">
                   <div class="widget-title-bar">
-                    <div class="widget-title">Environmental History (Last 24 Hours)</div>
-                    <button class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="app.triggerSensorSimulation()">Trigger Sensor Update</button>
+                    <div class="widget-title">Connector Readback</div>
+                    <button class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="app.refreshSelectedColonySensorReadings({ force: true, showErrors: true })">Refresh Readings</button>
                   </div>
                   <div id="colony-sensor-chart-container">
                     <!-- SVG Chart Rendered via JS -->
@@ -580,6 +618,14 @@
                     Receive monthly newsletter recommendations
                   </label>
                 </div>
+                <div class="form-group">
+                  <label for="profile-log-level">Application Log Level</label>
+                  <select id="profile-log-level" class="form-control">
+                    <option value="info">Info</option>
+                    <option value="warn">Warn</option>
+                    <option value="error">Error</option>
+                  </select>
+                </div>
                 <button type="submit" class="btn btn-primary">Update Profile</button>
               </form>
               <div style="border-top: 1px solid var(--border-color); padding-top: 20px; margin-top: 20px;">
@@ -612,7 +658,10 @@
                       <span class="reminder-meta" id="ha-status-label">Status: Disconnected</span>
                     </div>
                   </div>
-                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.toggleConnector('ha')">Connect</button>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" type="button" onclick="app.showConnectorSettingsModal('ha')">Settings</button>
+                    <button class="btn btn-secondary" id="ha-connect-btn" style="padding: 6px 12px; font-size: 12px;" type="button" onclick="app.toggleConnector('ha')">Connect</button>
+                  </div>
                 </div>
 
                 <!-- Jeedom -->
@@ -624,7 +673,10 @@
                       <span class="reminder-meta" id="jeedom-status-label">Status: Disconnected</span>
                     </div>
                   </div>
-                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.toggleConnector('jeedom')">Connect</button>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" type="button" onclick="app.showConnectorSettingsModal('jeedom')">Settings</button>
+                    <button class="btn btn-secondary" id="jeedom-connect-btn" style="padding: 6px 12px; font-size: 12px;" type="button" onclick="app.toggleConnector('jeedom')">Connect</button>
+                  </div>
                 </div>
 
                 <!-- Domoticz -->
@@ -636,7 +688,10 @@
                       <span class="reminder-meta" id="domoticz-status-label">Status: Disconnected</span>
                     </div>
                   </div>
-                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="app.toggleConnector('domoticz')">Connect</button>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" type="button" onclick="app.showConnectorSettingsModal('domoticz')">Settings</button>
+                    <button class="btn btn-secondary" id="domoticz-connect-btn" style="padding: 6px 12px; font-size: 12px;" type="button" onclick="app.toggleConnector('domoticz')">Connect</button>
+                  </div>
                 </div>
               </div>
 
@@ -1176,8 +1231,30 @@
           <button type="submit" class="btn btn-primary">Create Project</button>
         </div>
       </form>
+      </div>
     </div>
-  </div>
+
+    <div id="modal-connector-settings" class="modal-backdrop">
+      <div class="modal-content" style="max-width: 720px;">
+        <div class="modal-header">
+          <div>
+            <h3 class="modal-title" id="connector-settings-title">Connector Settings</h3>
+            <div id="connector-settings-subtitle" style="font-size:12px; color:var(--text-secondary); margin-top:6px;"></div>
+          </div>
+          <button class="modal-close" type="button" onclick="app.hideModal('modal-connector-settings')">✕</button>
+        </div>
+        <form id="connector-settings-form">
+          <div class="modal-body">
+            <input type="hidden" id="connector-settings-kind">
+            <div id="connector-settings-fields"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="app.hideModal('modal-connector-settings')">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+          </div>
+        </form>
+      </div>
+    </div>
       </main>
     </div>
 

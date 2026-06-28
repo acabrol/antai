@@ -28,7 +28,7 @@ sourceName: GBIF species API
 sourceUrl: https://www.gbif.org/species/1316376
 sourceApiUrl: https://api.gbif.org/v1/species/1316376
 antwebUrl: https://www.antweb.org/description.do?genus=messor&species=barbarus&rank=species
-gbifUpdatedAt: 2026-06-27T22:47:54.412Z
+gbifUpdatedAt: 2026-06-28T22:46:30.395Z
 ---
 
 # Messor barbarus

@@ -2,183 +2,86 @@
 
 ## 1. Purpose
 
-This roadmap describes a realistic phased path to build `Antai` from the current documentation set.
+This roadmap starts from the current implemented application state rather than from an empty scaffold.
 
-It is based on:
+It should be read together with:
 
-- [REQUIREMENTS.md](/home/kalden/projects/antai/REQUIREMENTS.md)
-- [SPECIFICATIONS.md](/home/kalden/projects/antai/SPECIFICATIONS.md)
-- [DESIGN.md](/home/kalden/projects/antai/DESIGN.md)
-- [ARCHITECTURE.md](/home/kalden/projects/antai/ARCHITECTURE.md)
+- [ARCHITECTURE.md](/home/kalden/projects/antai/docs/ARCHITECTURE.md)
+- [SPECIFICATIONS.md](/home/kalden/projects/antai/docs/SPECIFICATIONS.md)
+- [TASKS.md](/home/kalden/projects/antai/docs/TASKS.md)
 
-## 2. Roadmap Principles
+## 2. Current Baseline
 
-The roadmap must favor:
+The project already includes:
 
-- fastest path to a usable product
-- low complexity early
-- stable foundations before advanced integrations
-- visible progress
-- simple deployment from the beginning
+- a runnable Node.js server
+- a responsive vanilla JS SPA
+- local auth
+- profile editing
+- project and colony management
+- colony events and reminders
+- species pages
+- colony maps and zones
+- colony photo uploads
+- swarm sightings
+- news feed management
+- public project/colony pages
+- in-app AI assistant workflows
 
-## 3. Milestone Overview
+## 3. Near-Term Roadmap
 
-- Phase 0: Foundation and setup
-- Phase 1: Core antkeeping product
-- Phase 2: AI assistance
-- Phase 3: Sensors and automation
-- Phase 4: LLM interoperability
-- Phase 5: Community and content expansion
+### Phase 1: Solidify the Current Product
 
-## 4. Phase 0: Foundation and Setup
+Focus:
 
-Goal:
+- reduce ambiguity between implemented and planned features
+- harden current workflows
+- improve data consistency and UX polish
+- add tests around core flows
 
-- establish the project structure and minimal product shell
+### Phase 2: Complete Missing Core Features
 
-Deliverables:
+Focus:
 
-- repository structure
-- coding conventions
-- base application shell
-- navigation skeleton
-- responsive layout foundation
-- simple install/update workflow definition
-- basic authentication flow structure
+- close obvious gaps in the current core product
+- decide whether currently partial modules should be expanded or simplified
 
-Exit condition:
+Candidate items:
 
-- the project is runnable, documented, and easy to understand
+- better public/private publishing controls
+- stronger photo management UX
+- refinement of maps and zone workflows
+- more complete AI settings and output handling
 
-## 5. Phase 1: Core Antkeeping Product
+### Phase 3: Expand Deferred Features
 
-Goal:
+Focus:
 
-- deliver a useful daily antkeeping application without advanced AI or automation
+- implement selectively from the deferred backlog in [TASKS.md](/home/kalden/projects/antai/docs/TASKS.md)
 
-Deliverables:
+Candidate areas:
 
-- signup/login/profile
-- colony list
-- colony detail
-- colony journal
-- reminders
-- species and care sheets
-- dashboard
-- photo upload and viewing
-- colony maps and zone definition
-- responsive multi-device web interface
+- email verification
+- social login
+- richer sensor support
+- automation connectors
+- external LLM integration surfaces
+- video workflows
 
-Exit condition:
+## 4. Roadmap Principles
 
-- a user can manage colonies end-to-end using only the web interface
+Prioritize work that:
 
-## 6. Phase 2: AI Assistance
+- improves the current shipped experience
+- keeps deployment simple
+- preserves readable repository-backed data
+- avoids adding infrastructure without clear value
 
-Goal:
+## 5. Explicitly Deferred
 
-- make colony history and photos more useful through AI
+The following areas should remain roadmap items only until intentionally developed:
 
-Deliverables:
-
-- AI assistant
-- colony summary generation
-- recommendation generation
-- warning/anomaly suggestions
-- AI image analysis
-- image-based ant count estimation
-- species recognition assistance
-- saved AI summaries
-- zone-aware AI context
-
-Exit condition:
-
-- AI produces useful colony-aware outputs inside the application
-
-## 7. Phase 3: Sensors and Automation
-
-Goal:
-
-- connect colony care with environmental monitoring
-
-Deliverables:
-
-- sensor model
-- sensor history views
-- temperature/humidity displays
-- alerts from environmental thresholds
-- colony-to-sensor mapping
-- zone-to-sensor mapping
-- first automation connector support
-- first readable automation rules UI
-
-Exit condition:
-
-- a user can view environment data and act on it from colony context
-- a user can associate environment data with specific map zones
-
-## 8. Phase 4: LLM Interoperability
-
-Goal:
-
-- make `Antai` usable from external conversational and CLI-based AI tools
-
-Deliverables:
-
-- LLM-readable data access layer
-- ChatGPT-compatible integration path
-- Gemini-compatible integration path
-- Claude-compatible integration path
-- CLI-friendly access workflow
-- readable structured outputs for colony, reminder, and AI data
-
-Exit condition:
-
-- core user data is accessible and useful from web and LLM workflows
-
-## 9. Phase 5: Community and Content Expansion
-
-Goal:
-
-- expand beyond private colony management into discovery and sharing features
-
-Deliverables:
-
-- swarm map
-- educational/news content area
-- featured content workflows
-- optional partner/resource area
-- later community features if still aligned with simplicity goals
-
-Exit condition:
-
-- the product supports both private management and curated community-oriented value
-
-## 10. Recommended Delivery Order Inside Each Phase
-
-Within each phase, work should follow this order:
-
-1. core data and business rules
-2. usable screen flows
-3. responsive behavior
-4. integration or enhancement layer
-5. polish and cleanup
-
-## 11. Deferred Items
-
-The following should stay explicitly deferred until clearly justified:
-
-- complex moderation systems
-- overly advanced social features
-- heavy infrastructure requirements
-- unnecessary microservice decomposition
-- advanced automation features before basic sensor visibility is solid
-
-## 12. Roadmap Success Criteria
-
-The roadmap is successful when:
-
-- each phase delivers a usable product increment
-- complexity grows gradually
-- documentation remains aligned with the actual product
-- installation and maintenance remain simple across all phases
+- TV mode
+- moderation and community role systems
+- broad social features
+- heavy infrastructure decomposition

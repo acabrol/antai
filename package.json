@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node src/server.js",
+    "dev": "node --watch src/server.js",
     "check": "node --check public/app.js && node --check src/server.js"
   },
   "engines": {

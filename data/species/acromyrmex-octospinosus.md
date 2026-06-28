@@ -28,7 +28,7 @@ sourceName: GBIF species API
 sourceUrl: https://www.gbif.org/species/1320686
 sourceApiUrl: https://api.gbif.org/v1/species/1320686
 antwebUrl: https://www.antweb.org/description.do?genus=acromyrmex&species=octospinosus&rank=species
-gbifUpdatedAt: 2026-06-27T22:43:40.239Z
+gbifUpdatedAt: 2026-06-28T21:00:48.693Z
 ---
 
 # Acromyrmex octospinosus

@@ -642,6 +642,125 @@ html, body {
   transform: translateY(0);
 }
 
+.public-home-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.public-home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.9fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.public-home-copy,
+.public-home-highlight,
+.public-home-card {
+  border: 1px solid var(--border-color);
+  background:
+    radial-gradient(circle at top left, rgba(212, 163, 115, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+  box-shadow: var(--shadow-md);
+}
+
+.public-home-copy {
+  padding: 36px;
+  border-radius: var(--radius-lg);
+}
+
+.public-home-eyebrow,
+.public-home-highlight-label,
+.public-home-card-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
+.public-home-copy h1 {
+  margin-top: 12px;
+  font-family: var(--font-heading);
+  font-size: clamp(36px, 6vw, 58px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  max-width: 10ch;
+}
+
+.public-home-lead {
+  margin-top: 20px;
+  max-width: 60ch;
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.public-home-supporting {
+  margin-top: 16px;
+  max-width: 58ch;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.public-home-actions {
+  margin-top: 28px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.public-home-highlight {
+  padding: 28px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.public-home-highlight h2 {
+  margin-top: 12px;
+  font-family: var(--font-heading);
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.public-home-feature-list {
+  margin-top: 20px;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  line-height: 1.6;
+}
+
+.public-home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.public-home-card {
+  padding: 24px;
+  border-radius: var(--radius-md);
+}
+
+.public-home-card h3 {
+  margin-top: 12px;
+  font-family: var(--font-heading);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.public-home-card p {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
 /* View Header */
 .view-header {
   margin-bottom: 28px;
@@ -2085,7 +2204,9 @@ html, body {
   }
 
   .dashboard-grid,
-  .species-detail-grid {
+  .species-detail-grid,
+  .public-home-hero,
+  .public-home-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2147,6 +2268,24 @@ html, body {
 
   .view-title-wrap h1 {
     font-size: 24px;
+  }
+
+  .public-home-copy {
+    padding: 24px;
+  }
+
+  .public-home-highlight,
+  .public-home-card {
+    padding: 20px;
+  }
+
+  .public-home-copy h1 {
+    font-size: clamp(32px, 10vw, 42px);
+    max-width: 12ch;
+  }
+
+  .public-home-lead {
+    font-size: 16px;
   }
 
   .dash-stats-row {

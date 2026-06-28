@@ -3,11 +3,17 @@ services:
     build:
       context: .
     container_name: antai
+    command: ["node", "--watch", "src/server.js"]
     environment:
       HOST: 0.0.0.0
       PORT: 3100
     ports:
       - "${APP_PORT:-3100}:3100"
     volumes:
+      - ./src:/app/src
+      - ./public:/app/public
       - ./data:/app/data
+      - ./package.json:/app/package.json:ro
+      - ./package-lock.json:/app/package-lock.json:ro
+      - ./README.md:/app/README.md:ro
     restart: unless-stopped

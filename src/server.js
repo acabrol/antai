@@ -13,6 +13,7 @@ const APP_DIR = path.join(DATA_DIR, "app");
 const USERS_DIR = path.join(APP_DIR, "users");
 const SIGHTINGS_DIR = path.join(APP_DIR, "sightings");
 const CONNECTORS_DIR = path.join(APP_DIR, "connectors");
+const LOGS_DIR = path.join(APP_DIR, "logs");
 const SPECIES_DIR = path.join(DATA_DIR, "species");
 const NEWS_DIR = path.join(DATA_DIR, "news");
 const NEWS_INDEX_FILE = path.join(NEWS_DIR, "index.md");
@@ -21,6 +22,8 @@ const NEWS_CACHE_FILE = path.join(NEWS_CACHE_DIR, "articles.json");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
 const PASSWD_FILE = path.join(USERS_DIR, "passwd");
 const CONNECTORS_FILE = path.join(CONNECTORS_DIR, "settings.md");
+const APP_SETTINGS_FILE = path.join(APP_DIR, "settings.json");
+const LOG_LEVELS = { info: 10, warn: 20, error: 30 };
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -57,6 +60,16 @@ function sanitizeSlug(text) {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/(^-|-$)/g, "") || "unnamed";
+}
+
+function sanitizeConnectorDomainName(url) {
+  try {
+    const parsed = new URL(String(url || "").trim());
+    const host = `${parsed.hostname || "connector"}${parsed.port ? `_${parsed.port}` : ""}`;
+    return host.replace(/[^a-zA-Z0-9._-]/g, "_").toLowerCase() || "connector";
+  } catch (err) {
+    return sanitizeSlug(String(url || "connector").replace(/[:/]+/g, "-"));
+  }
 }
 
 function sha1Htpasswd(password) {
@@ -193,6 +206,65 @@ async function handleCliProxy(req, res) {
 
 async function ensureDir(dirPath) {
   await fs.mkdir(dirPath, { recursive: true });
+}
+
+function normalizeLogLevel(level) {
+  const value = String(level || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(LOG_LEVELS, value) ? value : "info";
+}
+
+async function loadAppSettings() {
+  const settings = await readJsonFile(APP_SETTINGS_FILE, {});
+  return {
+    logLevel: normalizeLogLevel(settings && settings.logLevel)
+  };
+}
+
+async function saveAppSettings(nextSettings = {}) {
+  const settings = {
+    logLevel: normalizeLogLevel(nextSettings.logLevel)
+  };
+  await ensureDir(APP_DIR);
+  await fs.writeFile(APP_SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  return settings;
+}
+
+function sanitizeLogValue(value) {
+  if (value === undefined || value === null) return value;
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack
+    };
+  }
+  if (Array.isArray(value)) return value.map(sanitizeLogValue);
+  if (typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, sanitizeLogValue(entry)]));
+  }
+  if (typeof value === "string" && value.length > 4000) {
+    return `${value.slice(0, 3997)}...`;
+  }
+  return value;
+}
+
+async function writeLogEntry(level, event, message, context = {}) {
+  const normalizedLevel = normalizeLogLevel(level);
+  const settings = await loadAppSettings();
+  if (LOG_LEVELS[normalizedLevel] < LOG_LEVELS[settings.logLevel]) {
+    return;
+  }
+  await ensureDir(LOGS_DIR);
+  const timestamp = new Date().toISOString();
+  const fileName = `app-${timestamp.slice(0, 10)}.log`;
+  const entry = {
+    timestamp,
+    level: normalizedLevel,
+    event: String(event || "app.event"),
+    message: String(message || ""),
+    context: sanitizeLogValue(context)
+  };
+  await fs.appendFile(path.join(LOGS_DIR, fileName), `${JSON.stringify(entry)}\n`, "utf8");
 }
 
 async function readJsonFile(filePath, fallback) {
@@ -877,10 +949,79 @@ async function writeColonyGalleryFile(savedItem, projectSlug) {
   await fs.writeFile(galleryPath, `${lines.join("\n").trim()}\n`, "utf8");
 }
 
+async function loadConnectorConfigs() {
+  await ensureDir(CONNECTORS_DIR);
+  const map = {};
+  try {
+    const entries = await fs.readdir(CONNECTORS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      try {
+        const raw = await fs.readFile(path.join(CONNECTORS_DIR, entry.name), "utf8");
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") continue;
+        const type = String(parsed.type || "").trim();
+        if (!type) continue;
+        map[type] = parsed;
+      } catch (err) {
+        await writeLogEntry("warn", "connectors.config.read_failed", "Failed to read connector config file.", {
+          fileName: entry.name,
+          error: err.message
+        });
+      }
+    }
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  return map;
+}
+
+async function saveConnectorConfig(config) {
+  const type = String(config && config.type || "").trim();
+  const baseUrl = normalizeConnectorBaseUrl(config && config.baseUrl);
+  if (!type || type === "none") {
+    throw new Error("Connector type is required.");
+  }
+  if (!baseUrl) {
+    throw new Error("Connector base URL is required.");
+  }
+  await ensureDir(CONNECTORS_DIR);
+  const fileName = `${sanitizeConnectorDomainName(baseUrl)}.json`;
+  const payload = {
+    ...config,
+    type,
+    baseUrl
+  };
+  try {
+    const entries = await fs.readdir(CONNECTORS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json") || entry.name === fileName) continue;
+      try {
+        const raw = await fs.readFile(path.join(CONNECTORS_DIR, entry.name), "utf8");
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.type === type) {
+          await fs.unlink(path.join(CONNECTORS_DIR, entry.name));
+        }
+      } catch (err) {
+        await writeLogEntry("warn", "connectors.config.inspect_failed", "Failed to inspect connector config file.", {
+          fileName: entry.name,
+          error: err.message
+        });
+      }
+    }
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  await fs.writeFile(path.join(CONNECTORS_DIR, fileName), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return payload;
+}
+
 async function loadBootstrapData() {
   await ensureDir(USERS_DIR);
   const users = await listMarkdownFiles(USERS_DIR);
   const settingsParsed = parseFrontMatter(await fs.readFile(CONNECTORS_FILE, "utf8").catch(() => "---\n---\n"));
+  const connectorConfigs = await loadConnectorConfigs();
+  const appSettings = await loadAppSettings();
   const speciesList = await loadSpeciesList();
   const newsCache = await loadCachedNews();
   const newsFeeds = await loadNewsFeeds();
@@ -966,6 +1107,8 @@ async function loadBootstrapData() {
     zones,
     automationRules,
     apiKeys: settingsParsed.metadata.geminiApiKey ? { gemini: settingsParsed.metadata.geminiApiKey } : {},
+    connectorSettings: connectorConfigs,
+    appSettings,
     speciesList,
     newsFeeds,
     newsList
@@ -992,6 +1135,541 @@ async function parseRawBody(req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks);
+}
+
+function normalizeConnectorBaseUrl(url) {
+  return String(url || "").trim().replace(/\/+$/, "");
+}
+
+function buildBasicAuthHeader(username, password) {
+  if (!username && !password) return null;
+  return `Basic ${Buffer.from(`${username || ""}:${password || ""}`).toString("base64")}`;
+}
+
+async function fetchConnectorText(url, options = {}) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Connector request failed with HTTP ${response.status}`);
+  }
+  return text;
+}
+
+async function fetchConnectorJson(url, options = {}) {
+  const text = await fetchConnectorText(url, options);
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error("Connector response was not valid JSON.");
+  }
+}
+
+function parseNumericValue(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const match = String(value).match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function buildConnectorReading(value, unit, source, raw) {
+  return {
+    value,
+    unit: unit || "",
+    source: source || "",
+    raw: raw === undefined ? null : raw
+  };
+}
+
+function inferHomeAssistantKind(entity = {}) {
+  const entityId = String(entity.entity_id || "");
+  const domain = entityId.includes(".") ? entityId.split(".")[0] : "";
+  const unit = entity.attributes && entity.attributes.unit_of_measurement ? String(entity.attributes.unit_of_measurement) : "";
+  const deviceClass = entity.attributes && entity.attributes.device_class ? String(entity.attributes.device_class).toLowerCase() : "";
+  if (domain === "camera") return "camera_picture";
+  if (deviceClass === "temperature" || unit === "°C" || unit === "C") return "temperature";
+  if (deviceClass === "humidity" || unit === "%") return "humidity";
+  if (["aqi", "carbon_dioxide", "carbon_monoxide", "nitrogen_dioxide", "nitrogen_monoxide", "nitrous_oxide", "ozone", "pm1", "pm25", "pm4", "pm10", "sulphur_dioxide", "volatile_organic_compounds", "volatile_organic_compounds_parts"].includes(deviceClass)) return "air_quality";
+  if (deviceClass === "power" || unit.toLowerCase() === "w") return "power";
+  if (deviceClass === "battery" || unit === "%") return "battery";
+  if (domain === "binary_sensor") return "binary";
+  if (domain === "switch" || domain === "light") return "switch";
+  return domain || "generic";
+}
+
+function buildJeedomApiUrl(baseUrl, apiKey, params = {}) {
+  const search = new URLSearchParams({
+    apikey: String(apiKey || ""),
+    ...Object.fromEntries(Object.entries(params).map(([key, value]) => [key, value === undefined || value === null ? "" : String(value)]))
+  });
+  return `${baseUrl}/core/api/jeeApi.php?${search.toString()}`;
+}
+
+function buildHomeAssistantApiUrl(baseUrl, path = "") {
+  const normalizedPath = String(path || "").replace(/^\/+/, "");
+  if (!normalizedPath) {
+    return `${baseUrl}/api/`;
+  }
+  return `${baseUrl}/api/${normalizedPath}`;
+}
+
+function buildDomoticzApiUrl(baseUrl, params = {}) {
+  const search = new URLSearchParams(
+    Object.fromEntries(
+      Object.entries(params).map(([key, value]) => [key, value === undefined || value === null ? "" : String(value)])
+    )
+  );
+  return `${baseUrl}/json.htm?${search.toString()}`;
+}
+
+function inferJeedomCommandKind(candidate = {}) {
+  const generic = String(candidate.generic_type || candidate.genericType || "").toLowerCase();
+  const unit = String(candidate.unite || candidate.unit || candidate.configuration && candidate.configuration.unite || "").toLowerCase();
+  const label = String(candidate.humanName || candidate.name || candidate.logicalId || "").toLowerCase();
+  if (generic.includes("camera")) return "camera_picture";
+  if (generic.includes("temp") || unit === "°c" || unit === "c" || label.includes("temp")) {
+    return "temperature";
+  }
+  if (generic.includes("humid") || generic.includes("hygro") || unit === "%" || label.includes("humid") || label.includes("hygro")) {
+    return "humidity";
+  }
+  if (generic.includes("air") || generic.includes("co2") || generic.includes("quality") || generic.includes("pollution") || label.includes("co2") || label.includes("pm2") || label.includes("air quality")) {
+    return "air_quality";
+  }
+  return "generic";
+}
+
+function extractJeedomCommandItems(payload) {
+  const items = [];
+  const seen = new Set();
+  const visit = value => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (typeof value !== "object") return;
+
+    const type = String(value.type || "").toLowerCase();
+    const hasCommandShape = value.id !== undefined
+      && (value.name !== undefined || value.humanName !== undefined || value.logicalId !== undefined)
+      && type === "info";
+
+    if (hasCommandShape) {
+      const id = String(value.id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        const unit = value.unite !== undefined
+          ? String(value.unite || "")
+          : (value.configuration && value.configuration.unite ? String(value.configuration.unite) : "");
+        const labelBase = value.humanName || value.name || value.logicalId || `Command ${id}`;
+        const genericType = String(value.generic_type || value.genericType || "");
+        items.push({
+          id,
+          label: `${labelBase}${unit ? ` (${unit})` : ""}`,
+          unit,
+          kind: inferJeedomCommandKind(value),
+          genericType
+        });
+      }
+    }
+
+    Object.values(value).forEach(visit);
+  };
+
+  visit(payload);
+  return items;
+}
+
+function normalizeMappedConnectorItems(items = []) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(item => ({
+      id: String(item && item.id || "").trim(),
+      label: String(item && item.label || "").trim(),
+      kind: String(item && item.kind || "generic").trim(),
+      unit: String(item && item.unit || "").trim(),
+      genericType: String(item && item.genericType || "").trim(),
+      mediaUrl: String(item && item.mediaUrl || "").trim()
+    }))
+    .filter(item => item.id);
+}
+
+function buildSensorLogFileName(connectorType, sensorKind, sensorId) {
+  return `${sanitizeSlug(connectorType || "connector")}-${sanitizeSlug(sensorKind || "sensor")}-${sanitizeSlug(sensorId || "unknown-sensor")}.log`;
+}
+
+async function appendSensorLogEntry(colony, connectorType, sensorKind, reading) {
+  if (!colony || !colony._colonyFolder || !reading) return;
+  const state = await loadBootstrapData();
+  const projectSlug = getProjectSlugForRecord(state, "colonies", colony);
+  const logsDir = path.join(PROJECTS_DIR, projectSlug, colony._colonyFolder, "logs");
+  await ensureDir(logsDir);
+  const sensorId = reading.source || `${sensorKind}-${connectorType}`;
+  const fileName = buildSensorLogFileName(connectorType, sensorKind, sensorId);
+  const line = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    connectorType,
+    sensorKind,
+    sensorId,
+    value: reading.value,
+    unit: reading.unit || "",
+    raw: reading.raw === undefined ? null : reading.raw
+  });
+  await fs.appendFile(path.join(logsDir, fileName), `${line}\n`, "utf8");
+}
+
+async function handleConnectorDiscover(req, res) {
+  const { config } = await parseJsonBody(req);
+  const type = String(config && config.type || "").trim();
+  const baseUrl = normalizeConnectorBaseUrl(config && config.baseUrl);
+  if (!type || type === "none") {
+    sendJson(res, 400, { error: "Connector type is required." });
+    return;
+  }
+  if (!baseUrl) {
+    sendJson(res, 400, { error: "Connector base URL is required." });
+    return;
+  }
+
+  if (type === "home_assistant") {
+    if (!config.accessToken) {
+      sendJson(res, 400, { error: "Home Assistant access token is required." });
+      return;
+    }
+    const payload = await fetchConnectorJson(buildHomeAssistantApiUrl(baseUrl, "states"), {
+      headers: {
+        "Authorization": `Bearer ${config.accessToken}`,
+        "Content-Type": "application/json"
+      }
+    });
+    const items = Array.isArray(payload) ? payload
+      .filter(item => item && typeof item.entity_id === "string")
+      .map(item => {
+        const unit = item.attributes && item.attributes.unit_of_measurement ? String(item.attributes.unit_of_measurement) : "";
+        const domain = item.entity_id.includes(".") ? item.entity_id.split(".")[0] : "";
+        const kind = inferHomeAssistantKind(item);
+        const entityPicture = item.attributes && typeof item.attributes.entity_picture === "string"
+          ? String(item.attributes.entity_picture)
+          : "";
+        return {
+          id: item.entity_id,
+          label: `${item.entity_id}${item.attributes && item.attributes.friendly_name ? ` - ${item.attributes.friendly_name}` : ""}`,
+          unit,
+          kind,
+          genericType: domain,
+          mediaUrl: entityPicture ? (entityPicture.startsWith("http") ? entityPicture : `${baseUrl}${entityPicture}`) : ""
+        };
+      })
+      : [];
+    sendJson(res, 200, { items });
+    return;
+  }
+
+  if (type === "jeedom") {
+    if (!config.apiKey) {
+      sendJson(res, 400, { error: "Jeedom API key is required." });
+      return;
+    }
+    const payload = await fetchConnectorJson(buildJeedomApiUrl(baseUrl, config.apiKey, { type: "fullData" }));
+    const items = extractJeedomCommandItems(payload);
+    sendJson(res, 200, {
+      items,
+      message: items.length
+        ? "Jeedom info commands discovered from the documented fullData HTTP API response."
+        : "No Jeedom info commands were detected in the fullData HTTP API response."
+    });
+    return;
+  }
+
+  if (type === "domoticz") {
+    const headers = {};
+    const auth = buildBasicAuthHeader(config.username, config.password);
+    if (auth) headers.Authorization = auth;
+    const payload = await fetchConnectorJson(buildDomoticzApiUrl(baseUrl, {
+      type: "command",
+      param: "getdevices",
+      filter: "all",
+      used: "true",
+      order: "Name"
+    }), { headers });
+    const items = Array.isArray(payload && payload.result) ? payload.result.map(item => {
+      const unit = item.Humidity !== undefined ? "%" : (item.Temp !== undefined ? "°C" : "");
+      let kind = "generic";
+      if (item.Temp !== undefined) kind = "temperature";
+      if (item.Humidity !== undefined) kind = "humidity";
+      if (String(item.Type || "").toLowerCase().includes("air") || String(item.SubType || "").toLowerCase().includes("air") || item.CO2 !== undefined || item.Quality !== undefined) kind = "air_quality";
+      return {
+        id: String(item.idx),
+        label: `${item.Name || `IDX ${item.idx}`} (${item.Type || "Device"}${item.SubType ? ` / ${item.SubType}` : ""})`,
+        unit,
+        kind,
+        genericType: String(item.Type || "")
+      };
+    }) : [];
+    sendJson(res, 200, { items });
+    return;
+  }
+
+  sendJson(res, 400, { error: "Unsupported connector type." });
+}
+
+async function handleConnectorTest(req, res) {
+  const { config } = await parseJsonBody(req);
+  const type = String(config && config.type || "").trim();
+  const baseUrl = normalizeConnectorBaseUrl(config && config.baseUrl);
+  if (!type || type === "none") {
+    sendJson(res, 400, { error: "Connector type is required." });
+    return;
+  }
+  if (!baseUrl) {
+    sendJson(res, 400, { error: "Connector base URL is required." });
+    return;
+  }
+
+  try {
+    if (type === "home_assistant") {
+      if (!config.accessToken) {
+        sendJson(res, 400, { error: "Home Assistant access token is required." });
+        return;
+      }
+      const payload = await fetchConnectorJson(buildHomeAssistantApiUrl(baseUrl), {
+        headers: {
+          "Authorization": `Bearer ${config.accessToken}`,
+          "Content-Type": "application/json"
+        }
+      });
+      sendJson(res, 200, {
+        ok: true,
+        message: "Connected to Home Assistant API.",
+        details: payload
+      });
+      return;
+    }
+
+    if (type === "jeedom") {
+      if (!config.apiKey) {
+        sendJson(res, 400, { error: "Jeedom API key is required." });
+        return;
+      }
+      const payload = await fetchConnectorJson(buildJeedomApiUrl(baseUrl, config.apiKey, { type: "fullData" }));
+      const commandCount = extractJeedomCommandItems(payload).length;
+      sendJson(res, 200, {
+        ok: true,
+        message: "Connected to Jeedom HTTP API.",
+        details: { commandCount }
+      });
+      return;
+    }
+
+    if (type === "domoticz") {
+      const headers = {};
+      const auth = buildBasicAuthHeader(config.username, config.password);
+      if (auth) headers.Authorization = auth;
+      const payload = await fetchConnectorJson(buildDomoticzApiUrl(baseUrl, {
+        type: "command",
+        param: "getversion"
+      }), { headers });
+      if (!payload || payload.status === "ERR") {
+        throw new Error(payload && payload.message ? String(payload.message) : "Domoticz API connection failed.");
+      }
+      sendJson(res, 200, {
+        ok: true,
+        message: "Connected to Domoticz API.",
+        details: payload
+      });
+      return;
+    }
+
+    sendJson(res, 400, { error: "Unsupported connector type." });
+  } catch (err) {
+    sendJson(res, 200, {
+      ok: false,
+      error: err && err.message ? err.message : "Connector connection failed."
+    });
+  }
+}
+
+async function handleConnectorReadings(req, res) {
+  const { colonyId, config } = await parseJsonBody(req);
+  const type = String(config && config.type || "").trim();
+  const baseUrl = normalizeConnectorBaseUrl(config && config.baseUrl);
+  const mappedItems = normalizeMappedConnectorItems(config && config.mappedItems);
+  if (!type || type === "none") {
+    sendJson(res, 400, { error: "Connector type is required." });
+    return;
+  }
+  if (!baseUrl) {
+    sendJson(res, 400, { error: "Connector base URL is required." });
+    return;
+  }
+
+  const state = await loadBootstrapData();
+  const colony = colonyId
+    ? state.colonies.find(entry => entry.id === colonyId || entry.uuid === colonyId)
+    : null;
+
+  if (type === "home_assistant") {
+    if (!config.accessToken) {
+      sendJson(res, 400, { error: "Home Assistant access token is required." });
+      return;
+    }
+    if (!config.temperatureEntityId && !config.humidityEntityId && !mappedItems.length) {
+      sendJson(res, 400, { error: "Home Assistant requires at least one mapped entity or a temperature/humidity entity." });
+      return;
+    }
+    const headers = {
+      "Authorization": `Bearer ${config.accessToken}`,
+      "Content-Type": "application/json"
+    };
+    const tempState = config.temperatureEntityId
+      ? await fetchConnectorJson(buildHomeAssistantApiUrl(baseUrl, `states/${encodeURIComponent(config.temperatureEntityId)}`), { headers })
+      : null;
+    const humState = config.humidityEntityId
+      ? await fetchConnectorJson(buildHomeAssistantApiUrl(baseUrl, `states/${encodeURIComponent(config.humidityEntityId)}`), { headers })
+      : null;
+    const mappedPayload = await Promise.all(mappedItems.map(async item => {
+      const state = await fetchConnectorJson(buildHomeAssistantApiUrl(baseUrl, `states/${encodeURIComponent(item.id)}`), { headers });
+      const entityPicture = state.attributes && typeof state.attributes.entity_picture === "string"
+        ? String(state.attributes.entity_picture)
+        : "";
+      return {
+        ...item,
+        mediaUrl: item.mediaUrl || (entityPicture ? (entityPicture.startsWith("http") ? entityPicture : `${baseUrl}${entityPicture}`) : ""),
+        reading: buildConnectorReading(
+          parseNumericValue(state.state) ?? state.state,
+          state.attributes && state.attributes.unit_of_measurement ? String(state.attributes.unit_of_measurement) : item.unit,
+          state.entity_id,
+          state.state
+        )
+      };
+    }));
+    const payload = {
+      connectorType: type,
+      temperature: tempState ? buildConnectorReading(
+        parseNumericValue(tempState.state),
+        tempState.attributes && tempState.attributes.unit_of_measurement ? String(tempState.attributes.unit_of_measurement) : "",
+        tempState.entity_id,
+        tempState.state
+      ) : null,
+      humidity: humState ? buildConnectorReading(
+        parseNumericValue(humState.state),
+        humState.attributes && humState.attributes.unit_of_measurement ? String(humState.attributes.unit_of_measurement) : "",
+        humState.entity_id,
+        humState.state
+      ) : null,
+      mappedItems: mappedPayload
+    };
+    if (colony) {
+      if (payload.temperature) await appendSensorLogEntry(colony, type, "temperature", payload.temperature);
+      if (payload.humidity) await appendSensorLogEntry(colony, type, "humidity", payload.humidity);
+      for (const item of mappedPayload) {
+        await appendSensorLogEntry(colony, type, item.kind || "mapped", item.reading);
+      }
+    }
+    sendJson(res, 200, payload);
+    return;
+  }
+
+  if (type === "jeedom") {
+    if (!config.apiKey) {
+      sendJson(res, 400, { error: "Jeedom API key is required." });
+      return;
+    }
+    if (!config.temperatureCmdId && !config.humidityCmdId && !mappedItems.length) {
+      sendJson(res, 400, { error: "Jeedom requires at least one mapped command or a temperature/humidity command." });
+      return;
+    }
+    const tempRaw = config.temperatureCmdId
+      ? await fetchConnectorText(buildJeedomApiUrl(baseUrl, config.apiKey, { type: "cmd", id: config.temperatureCmdId }))
+      : null;
+    const humRaw = config.humidityCmdId
+      ? await fetchConnectorText(buildJeedomApiUrl(baseUrl, config.apiKey, { type: "cmd", id: config.humidityCmdId }))
+      : null;
+    const mappedPayload = await Promise.all(mappedItems.map(async item => {
+      const raw = await fetchConnectorText(buildJeedomApiUrl(baseUrl, config.apiKey, { type: "cmd", id: item.id }));
+      return {
+        ...item,
+        reading: buildConnectorReading(parseNumericValue(raw) ?? raw.trim(), item.unit, String(item.id), raw.trim())
+      };
+    }));
+    const payload = {
+      connectorType: type,
+      temperature: tempRaw !== null ? buildConnectorReading(parseNumericValue(tempRaw), "°C", String(config.temperatureCmdId), tempRaw.trim()) : null,
+      humidity: humRaw !== null ? buildConnectorReading(parseNumericValue(humRaw), "%", String(config.humidityCmdId), humRaw.trim()) : null,
+      mappedItems: mappedPayload
+    };
+    if (colony) {
+      if (payload.temperature) await appendSensorLogEntry(colony, type, "temperature", payload.temperature);
+      if (payload.humidity) await appendSensorLogEntry(colony, type, "humidity", payload.humidity);
+      for (const item of mappedPayload) {
+        await appendSensorLogEntry(colony, type, item.kind || "mapped", item.reading);
+      }
+    }
+    sendJson(res, 200, payload);
+    return;
+  }
+
+  if (type === "domoticz") {
+    if (!config.temperatureIdx && !config.humidityIdx && !mappedItems.length) {
+      sendJson(res, 400, { error: "Domoticz requires at least one mapped IDX or a temperature/humidity IDX." });
+      return;
+    }
+    const headers = {};
+    const auth = buildBasicAuthHeader(config.username, config.password);
+    if (auth) headers.Authorization = auth;
+    const tempPayload = config.temperatureIdx ? await fetchConnectorJson(buildDomoticzApiUrl(baseUrl, {
+        type: "command",
+        param: "getdevices",
+        rid: config.temperatureIdx
+      }), { headers }) : null;
+    const humPayload = config.humidityIdx ? await fetchConnectorJson(buildDomoticzApiUrl(baseUrl, {
+        type: "command",
+        param: "getdevices",
+        rid: config.humidityIdx
+      }), { headers }) : null;
+    const mappedPayload = await Promise.all(mappedItems.map(async item => {
+      const itemPayload = await fetchConnectorJson(buildDomoticzApiUrl(baseUrl, {
+        type: "command",
+        param: "getdevices",
+        rid: item.id
+      }), { headers });
+      const device = Array.isArray(itemPayload && itemPayload.result) ? itemPayload.result[0] : null;
+      const rawValue = device && (device.Data !== undefined ? device.Data : device.Status !== undefined ? device.Status : device.Temp !== undefined ? device.Temp : device.Humidity);
+      return {
+        ...item,
+        reading: buildConnectorReading(parseNumericValue(rawValue) ?? rawValue, item.unit, device ? `${device.idx}${device.Name ? ` - ${device.Name}` : ""}` : String(item.id), rawValue)
+      };
+    }));
+    const tempDevice = Array.isArray(tempPayload && tempPayload.result) ? tempPayload.result[0] : null;
+    const humDevice = Array.isArray(humPayload && humPayload.result) ? humPayload.result[0] : null;
+    const payload = {
+      connectorType: type,
+      temperature: tempDevice ? buildConnectorReading(
+        parseNumericValue(tempDevice && (tempDevice.Temp !== undefined ? tempDevice.Temp : tempDevice.Data)),
+        "°C",
+        tempDevice ? `${tempDevice.idx}${tempDevice.Name ? ` - ${tempDevice.Name}` : ""}` : String(config.temperatureIdx),
+        tempDevice && (tempDevice.Data || tempDevice.Temp)
+      ) : null,
+      humidity: humDevice ? buildConnectorReading(
+        parseNumericValue(humDevice && (humDevice.Humidity !== undefined ? humDevice.Humidity : humDevice.Data)),
+        "%",
+        humDevice ? `${humDevice.idx}${humDevice.Name ? ` - ${humDevice.Name}` : ""}` : String(config.humidityIdx),
+        humDevice && (humDevice.Data || humDevice.Humidity)
+      ) : null,
+      mappedItems: mappedPayload
+    };
+    if (colony) {
+      if (payload.temperature) await appendSensorLogEntry(colony, type, "temperature", payload.temperature);
+      if (payload.humidity) await appendSensorLogEntry(colony, type, "humidity", payload.humidity);
+      for (const item of mappedPayload) {
+        await appendSensorLogEntry(colony, type, item.kind || "mapped", item.reading);
+      }
+    }
+    sendJson(res, 200, payload);
+    return;
+  }
+
+  sendJson(res, 400, { error: "Unsupported connector type." });
 }
 
 async function findUserByEmail(email) {
@@ -1114,6 +1792,33 @@ async function handleGeminiSettings(req, res) {
   const { geminiApiKey } = await parseJsonBody(req);
   await ensureDir(CONNECTORS_DIR);
   await fs.writeFile(CONNECTORS_FILE, stringifyFrontMatter({ geminiApiKey: geminiApiKey || "" }), "utf8");
+  await writeLogEntry("info", "settings.gemini.updated", "Gemini API settings updated.");
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleConnectorSettings(req, res) {
+  const { config } = await parseJsonBody(req);
+  const saved = await saveConnectorConfig(config || {});
+  await writeLogEntry("info", "settings.connector.updated", "Connector settings updated.", {
+    connectorType: saved.type,
+    baseUrl: saved.baseUrl
+  });
+  sendJson(res, 200, { ok: true, config: saved });
+}
+
+async function handleAppSettings(req, res) {
+  const { logLevel } = await parseJsonBody(req);
+  const settings = await saveAppSettings({ logLevel });
+  await writeLogEntry("info", "settings.app.updated", "Application settings updated.", { logLevel: settings.logLevel });
+  sendJson(res, 200, { ok: true, settings });
+}
+
+async function handleClientLog(req, res) {
+  const { level, event, message, context } = await parseJsonBody(req);
+  await writeLogEntry(level, event || "client.event", message || "", {
+    source: "client",
+    ...sanitizeLogValue(context || {})
+  });
   sendJson(res, 200, { ok: true });
 }
 
@@ -1164,13 +1869,16 @@ async function handleWriteRecord(req, res) {
 
   if (collection === "colonies") {
     await materializeColonyPhotos(savedItem, projectSlug);
-    if (savedItem.species) {
-      try {
-        await refreshSpeciesSheetFromGbif(savedItem.species);
-      } catch (err) {
-        console.warn(`Species refresh failed for ${savedItem.species}:`, err.message);
+      if (savedItem.species) {
+        try {
+          await refreshSpeciesSheetFromGbif(savedItem.species);
+        } catch (err) {
+          await writeLogEntry("warn", "species.refresh.failed", "Species refresh failed after colony save.", {
+            species: savedItem.species,
+            error: err.message
+          });
+        }
       }
-    }
   }
 
   if (!savedItem._fileName) {
@@ -1276,13 +1984,22 @@ async function handleDeleteRecord(req, res) {
     }
   }
 
-  const pathParts = collection === "projects"
-    ? ["projects", source._slug || sanitizeSlug(itemId)]
-    : getRecordPathParts(collection, source, projectSlug, colonyFolder);
+  if (collection === "projects") {
+    const projectDir = path.join(DATA_DIR, "projects", source._slug || sanitizeSlug(itemId));
+    await fs.rm(projectDir, { recursive: true, force: true });
+    sendJson(res, 200, { ok: true });
+    return;
+  }
 
-  const targetPath = collection === "projects"
-    ? path.join(DATA_DIR, ...pathParts, "project.md")
-    : path.join(DATA_DIR, ...pathParts, fileName);
+  if (collection === "colonies") {
+    const colonyDir = path.join(DATA_DIR, "projects", projectSlug, colonyFolder);
+    await fs.rm(colonyDir, { recursive: true, force: true });
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  const pathParts = getRecordPathParts(collection, source, projectSlug, colonyFolder);
+  const targetPath = path.join(DATA_DIR, ...pathParts, fileName);
 
   try {
     await fs.unlink(targetPath);
@@ -1319,6 +2036,18 @@ async function serveStatic(res, pathname) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
+  res.on("finish", () => {
+    if (String(req.url || "").startsWith("/api/logs")) return;
+    writeLogEntry("info", "http.request.completed", "HTTP request completed.", {
+      requestId,
+      method: req.method,
+      path: req.url,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt
+    }).catch(() => {});
+  });
   try {
     const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
@@ -1344,6 +2073,30 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/settings/gemini") {
       await handleGeminiSettings(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/settings/app") {
+      await handleAppSettings(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/logs") {
+      await handleClientLog(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/connectors/settings") {
+      await handleConnectorSettings(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/connectors/discover") {
+      await handleConnectorDiscover(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/connectors/test") {
+      await handleConnectorTest(req, res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/connectors/readings") {
+      await handleConnectorReadings(req, res);
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/data/write") {
@@ -1379,11 +2132,19 @@ const server = http.createServer(async (req, res) => {
 
     await serveStatic(res, url.pathname);
   } catch (err) {
-    console.error(err);
+    await writeLogEntry("error", "http.request.failed", "Unhandled server error.", {
+      requestId,
+      method: req.method,
+      path: req.url,
+      error: err
+    });
     sendJson(res, 500, { error: "Internal server error" });
   }
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Antai server listening at http://${HOST}:${PORT}`);
+  writeLogEntry("info", "server.started", "Antai server started.", {
+    host: HOST,
+    port: PORT
+  }).catch(() => {});
 });

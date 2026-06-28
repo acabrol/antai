@@ -7,6 +7,8 @@ data/logs/
 data/news/cache/
 data/projects/
 data/app/users/
+data/app/connectors/*
+data/app/logs/
 data/app/groups/*
 !data/app/groups/default.md
 

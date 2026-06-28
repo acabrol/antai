@@ -86,6 +86,8 @@ const DEFAULT_NEWS = [
   }
 ];
 
+const APP_LOG_LEVELS = { info: 10, warn: 20, error: 30 };
+
 function generateUUID() {
   if (typeof self !== 'undefined' && self.crypto && typeof self.crypto.randomUUID === 'function') {
     return self.crypto.randomUUID();
@@ -520,6 +522,9 @@ class AntaiApp {
     this.zones = [];
     this.automationRules = [];
     this.apiKeys = {};
+    this.connectorSettings = {};
+    this.appSettings = { logLevel: "info" };
+    this.activeConnectorSettingsKey = null;
     this.speciesList = [];
     this.newsFeeds = [];
     this.newsList = [];
@@ -554,6 +559,7 @@ class AntaiApp {
     this.activeColonyTab = "colony-tab-overview";
     this.activeMapId = null;
     this.editingColonyId = null;
+    this.isSavingColony = false;
     this.colonyPhotosBuffer = [];
     this.colonyPhotoEntries = [];
     this.colonySelectedPhotoIndex = -1;
@@ -578,6 +584,9 @@ class AntaiApp {
     ];
     this.currentScannerPresetIndex = 0;
     this.sensorSimInterval = null;
+    this.colonySensorDiscoveryCache = {};
+    this.colonySensorReadingsCache = {};
+    this.colonySensorLoading = false;
     
   }
 
@@ -599,6 +608,71 @@ class AntaiApp {
     return payload;
   }
 
+  normalizeLogLevel(level) {
+    const value = String(level || "").trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(APP_LOG_LEVELS, value) ? value : "info";
+  }
+
+  getAppLogLevel() {
+    return this.normalizeLogLevel(this.appSettings && this.appSettings.logLevel);
+  }
+
+  shouldLog(level) {
+    return APP_LOG_LEVELS[this.normalizeLogLevel(level)] >= APP_LOG_LEVELS[this.getAppLogLevel()];
+  }
+
+  async sendClientLog(level, event, message, context = {}) {
+    try {
+      await fetch("/api/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          level: this.normalizeLogLevel(level),
+          event,
+          message,
+          context: {
+            source: "browser",
+            view: this.currentView,
+            userUuid: this.currentUser ? this.currentUser.uuid : null,
+            ...context
+          }
+        })
+      });
+    } catch (err) {
+      // Avoid recursive logging on logging failures.
+    }
+  }
+
+  log(level, event, message, context = {}) {
+    const normalizedLevel = this.normalizeLogLevel(level);
+    if (!this.shouldLog(normalizedLevel)) return;
+    const payload = {
+      event,
+      message,
+      ...context
+    };
+    if (normalizedLevel === "error") {
+      console.error(message, payload);
+    } else if (normalizedLevel === "warn") {
+      console.warn(message, payload);
+    } else {
+      console.info(message, payload);
+    }
+    this.sendClientLog(normalizedLevel, event, message, context);
+  }
+
+  logInfo(event, message, context = {}) {
+    this.log("info", event, message, context);
+  }
+
+  logWarn(event, message, context = {}) {
+    this.log("warn", event, message, context);
+  }
+
+  logError(event, message, context = {}) {
+    this.log("error", event, message, context);
+  }
+
   isOnline() {
     return typeof navigator === "undefined" ? true : navigator.onLine !== false;
   }
@@ -617,7 +691,10 @@ class AntaiApp {
     try {
       window.localStorage.setItem(cacheKey, JSON.stringify(value));
     } catch (err) {
-      console.warn(`Failed to write cache ${cacheKey}:`, err);
+      this.logWarn("cache.write_failed", "Failed to write browser cache entry.", {
+        cacheKey,
+        error: err.message || String(err)
+      });
     }
   }
 
@@ -677,7 +754,10 @@ class AntaiApp {
       });
       return this.mergeSpeciesRecord(updated);
     } catch (err) {
-      console.warn(`Failed to refresh species sheet for ${speciesNameOrId}:`, err);
+      this.logWarn("species.sheet.refresh_failed", "Failed to refresh species sheet.", {
+        species: speciesNameOrId,
+        error: err.message || String(err)
+      });
       return this.getSpeciesByName(speciesNameOrId);
     }
   }
@@ -746,7 +826,9 @@ class AntaiApp {
 
     if (this.isOnline()) {
       this.loadLiveSpeciesCatalog().catch(err => {
-        console.warn("Live species catalog refresh failed:", err);
+        this.logWarn("species.catalog.refresh_failed", "Live species catalog refresh failed.", {
+          error: err.message || String(err)
+        });
         this.updateSpeciesCatalogStatus("Using cached species catalog because the live refresh failed.");
       });
     }
@@ -1123,7 +1205,7 @@ class AntaiApp {
     try {
       await this.apiPost("/api/profile", { user: this.currentUser });
     } catch (e) {
-      console.error("Failed to save AI settings:", e);
+      this.logError("ai.settings.save_failed", "Failed to save AI settings.", { error: e.message || String(e) });
     }
   }
 
@@ -2167,7 +2249,7 @@ class AntaiApp {
       prompts.sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title));
       this.preparedPrompts = prompts;
     } catch (err) {
-      console.error("Failed to load prepared prompts:", err);
+      this.logError("ai.prompts.load_failed", "Failed to load prepared prompts.", { error: err.message || String(err) });
       this.preparedPromptsLoadError = err.message || "Failed to load prepared prompts.";
     } finally {
       this.preparedPromptsLoaded = true;
@@ -2533,7 +2615,7 @@ class AntaiApp {
     const colonyInsights = this.normalizeColonyAiInsightsPayload(payload);
     if (colonyInsights) {
       this.applyColonyAiInsightsResult(colonyInsights);
-      console.log("Applied AI insights result.");
+      this.logInfo("ai.result.applied", "Applied colony AI insights result.");
       return;
     }
     let appliedCount = 0;
@@ -2547,7 +2629,7 @@ class AntaiApp {
         appliedCount++;
       }
     }
-    console.log(`Applied ${appliedCount} fields from AI result.`);
+    this.logInfo("ai.result.fields_applied", "Applied AI result fields to the current form.", { appliedCount });
   }
 
   applyColonyAiInsightsResult(payload) {
@@ -2687,6 +2769,10 @@ class AntaiApp {
     this.zones = snapshot.zones || [];
     this.automationRules = snapshot.automationRules || [];
     this.apiKeys = snapshot.apiKeys || {};
+    this.connectorSettings = snapshot.connectorSettings || {};
+    this.appSettings = {
+      logLevel: this.normalizeLogLevel(snapshot.appSettings && snapshot.appSettings.logLevel)
+    };
     this.speciesList = snapshot.speciesList || [];
     this.newsFeeds = snapshot.newsFeeds || [];
     this.newsList = snapshot.newsList || [];
@@ -2731,7 +2817,9 @@ class AntaiApp {
     window.addEventListener("online", () => {
       this.updateSpeciesCatalogStatus("Network restored. Refreshing live species catalog...");
       this.loadLiveSpeciesCatalog(true).catch(err => {
-        console.warn("Live species refresh on reconnect failed:", err);
+        this.logWarn("species.refresh.reconnect_failed", "Live species refresh on reconnect failed.", {
+          error: err.message || String(err)
+        });
         this.updateSpeciesCatalogStatus("Network restored, but live species refresh failed. Cached data is still available.");
       });
     });
@@ -3378,13 +3466,13 @@ class AntaiApp {
           });
         }
       } catch (e) {
-        console.error("Failed to load seed user:", e);
+        this.logError("seed.users.load_failed", "Failed to load seed users.", { error: e.message || String(e) });
       }
 
       try {
         await this.loadPasswordStore(manifest.passwords || "data/app/users/passwd");
       } catch (e) {
-        console.error("Failed to load seed password store:", e);
+        this.logError("seed.passwords.load_failed", "Failed to load seed password store.", { error: e.message || String(e) });
       }
 
       // Load Projects
@@ -3410,8 +3498,21 @@ class AntaiApp {
         if (connectorsData.geminiApiKey) {
           this.apiKeys.gemini = connectorsData.geminiApiKey;
         }
+        this.connectorSettings = { ...connectorsData };
       } catch (e) {
-        console.error("Failed to load seed connectors:", e);
+        this.logWarn("seed.connectors.load_failed", "Failed to load seed connectors.", { error: e.message || String(e) });
+      }
+
+      try {
+        const settingsRes = await fetch("data/app/settings.json");
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          this.appSettings = {
+            logLevel: this.normalizeLogLevel(settingsData && settingsData.logLevel)
+          };
+        }
+      } catch (e) {
+        this.logWarn("seed.settings.load_failed", "Failed to load app settings from seed data.", { error: e.message || String(e) });
       }
 
       // Load species & news
@@ -3503,7 +3604,7 @@ class AntaiApp {
             rawRules.push(await fetchMD(rulePath));
           }
         } catch (e) {
-          console.error("Error loading seed colony entry:", e);
+          this.logError("seed.colony.load_failed", "Error loading seed colony entry.", { error: e.message || String(e) });
         }
       }
 
@@ -3565,7 +3666,7 @@ class AntaiApp {
       }));
 
     } catch (err) {
-      console.error("Failed to load folder-based seed:", err);
+      this.logError("seed.folder.load_failed", "Failed to load folder-based seed.", { error: err.message || String(err) });
       throw err;
     }
     
@@ -3860,27 +3961,8 @@ class AntaiApp {
       }
     }
 
-    // If viewing colony detail, update conditions tab elements
-    if (this.currentView === "colony-detail" && this.selectedColonyId === "5b6e2d93-c46b-4e12-8d76-c56aef793b8e") {
-      const tempValEl1 = document.getElementById("colony-sensor-status-temp");
-      const humValEl1 = document.getElementById("colony-sensor-status-humidity");
-
-      if (tempValEl1 && humValEl1) {
-        tempValEl1.innerHTML = `
-          <h3 class="card-title">Temperature Levels</h3>
-          <div style="font-size: 32px; font-family: var(--font-heading); font-weight:700; color: var(--accent-danger); margin: 8px 0;">
-            ${cache["sensor-temp-1"]}°C
-          </div>
-          <p style="font-size:12px; color: var(--text-secondary);">Target: 22°C - 28°C (Ideal for Messor barbarus)</p>
-        `;
-        humValEl1.innerHTML = `
-          <h3 class="card-title">Humidity Levels</h3>
-          <div style="font-size: 32px; font-family: var(--font-heading); font-weight:700; color: var(--accent-info); margin: 8px 0;">
-            ${cache["sensor-hum-1"]}%
-          </div>
-          <p style="font-size:12px; color: var(--text-secondary);">Target: 30% - 50% (gradient required)</p>
-        `;
-      }
+    if (this.currentView === "colony-detail" && this.activeColonyTab === "colony-tab-sensors") {
+      this.renderColonySensorReadings();
     }
   }
 
@@ -3891,6 +3973,439 @@ class AntaiApp {
       this.updateSensorWidgets();
       this.renderColonySensorChart();
     }
+  }
+
+  getSelectedColony() {
+    return this.colonies.find(entry => entry.id === this.selectedColonyId) || null;
+  }
+
+  getColonySensorConnectorConfig(colony = this.getSelectedColony()) {
+    const base = colony && colony.sensorConnector && typeof colony.sensorConnector === "object"
+      ? { ...colony.sensorConnector }
+      : {};
+    const connectorDefaults = this.getConnectorConfigDefaults(base.type);
+    return {
+      type: base.type || "none",
+      baseUrl: base.baseUrl || connectorDefaults.baseUrl || "",
+      accessToken: base.accessToken || connectorDefaults.accessToken || "",
+      apiKey: base.apiKey || connectorDefaults.apiKey || "",
+      username: base.username || connectorDefaults.username || "",
+      password: base.password || connectorDefaults.password || "",
+      temperatureEntityId: base.temperatureEntityId || "",
+      humidityEntityId: base.humidityEntityId || "",
+      temperatureCmdId: base.temperatureCmdId || "",
+      humidityCmdId: base.humidityCmdId || "",
+      temperatureIdx: base.temperatureIdx || "",
+      humidityIdx: base.humidityIdx || "",
+      mappedItems: Array.isArray(base.mappedItems) ? base.mappedItems.map(item => ({
+        id: String(item && item.id || "").trim(),
+        label: String(item && item.label || "").trim(),
+        kind: String(item && item.kind || "generic").trim(),
+        unit: String(item && item.unit || "").trim(),
+        genericType: String(item && item.genericType || "").trim(),
+        mediaUrl: String(item && item.mediaUrl || "").trim()
+      })).filter(item => item.id || item.label) : []
+    };
+  }
+
+  renderColonySensorsTab() {
+    this.renderColonySensorConnectorPanel();
+    this.renderColonySensorReadings();
+    this.renderColonySensorChart();
+    const col = this.getSelectedColony();
+    const config = this.getColonySensorConnectorConfig(col);
+    if (config.type && config.type !== "none" && this.isColonySensorConfigComplete(config)) {
+      this.refreshSelectedColonySensorReadings();
+    }
+  }
+
+  getDiscoveredConnectorItems(colonyId = this.selectedColonyId) {
+    return this.colonySensorDiscoveryCache[colonyId] || [];
+  }
+
+  buildConnectorSensorOptionList(items, selectedValue, filterFn, placeholder) {
+    const filtered = items.filter(filterFn);
+    const options = [`<option value="">${escapeHtml(placeholder)}</option>`];
+    filtered.forEach(item => {
+      const selected = item.id === selectedValue ? "selected" : "";
+      const label = item.label || item.id;
+      options.push(`<option value="${escapeHtml(String(item.id))}" ${selected}>${escapeHtml(label)}</option>`);
+    });
+    return options.join("");
+  }
+
+  renderColonySensorMappedItemOptions(items, selectedValue) {
+    return this.buildConnectorSensorOptionList(items, selectedValue, () => true, "Select an item from the connected app");
+  }
+
+  getConnectorMappedItemKindOptions(selectedValue = "generic") {
+    const options = [
+      ["generic", "Generic"],
+      ["temperature", "Temperature"],
+      ["humidity", "Humidity"],
+      ["air_quality", "Air Quality"],
+      ["camera_picture", "Camera Picture"],
+      ["camera_stream", "Camera Stream"],
+      ["power", "Power"],
+      ["binary", "Binary Status"],
+      ["switch", "Switch Status"]
+    ];
+    return options.map(([value, label]) => `<option value="${value}" ${selectedValue === value ? "selected" : ""}>${label}</option>`).join("");
+  }
+
+  renderColonySensorConnectorPanel(draftConfig = null) {
+    const panel = document.getElementById("colony-sensor-connector-panel");
+    if (!panel) return;
+
+    const col = this.getSelectedColony();
+    if (!col) {
+      panel.innerHTML = `<div style="color:var(--text-muted);">Select a colony to configure connector-backed sensors.</div>`;
+      return;
+    }
+
+    const config = draftConfig ? { ...this.getColonySensorConnectorConfig(col), ...draftConfig } : this.getColonySensorConnectorConfig(col);
+    const items = this.getDiscoveredConnectorItems(col.id);
+    const isHA = config.type === "home_assistant";
+    const isJeedom = config.type === "jeedom";
+    const isDomoticz = config.type === "domoticz";
+    const readingState = this.colonySensorReadingsCache[col.id] || {};
+    const statusText = this.colonySensorLoading
+      ? "Loading connector data..."
+      : readingState.error
+        ? `Last error: ${readingState.error}`
+        : readingState.loadedAt
+          ? `Last refresh: ${new Date(readingState.loadedAt).toLocaleString()}`
+          : "No live readings loaded yet.";
+
+    const tempOptions = isHA
+      ? this.buildConnectorSensorOptionList(items, config.temperatureEntityId, item => item.kind === "temperature" || item.unit === "°C" || item.unit === "C", "Select a Home Assistant temperature entity")
+      : isJeedom
+        ? this.buildConnectorSensorOptionList(items, config.temperatureCmdId, item => item.kind === "temperature", "Select a Jeedom temperature command")
+      : isDomoticz
+        ? this.buildConnectorSensorOptionList(items, config.temperatureIdx, item => item.kind === "temperature" || item.unit === "°C" || item.unit === "C", "Select a Domoticz temperature device")
+        : "";
+    const humidityOptions = isHA
+      ? this.buildConnectorSensorOptionList(items, config.humidityEntityId, item => item.kind === "humidity" || item.unit === "%", "Select a Home Assistant humidity entity")
+      : isJeedom
+        ? this.buildConnectorSensorOptionList(items, config.humidityCmdId, item => item.kind === "humidity", "Select a Jeedom humidity command")
+      : isDomoticz
+        ? this.buildConnectorSensorOptionList(items, config.humidityIdx, item => item.kind === "humidity" || item.unit === "%", "Select a Domoticz humidity device")
+        : "";
+    const mappedItemRows = (config.mappedItems || []).map((item, index) => {
+      const options = items.length
+        ? this.renderColonySensorMappedItemOptions(items, item.id)
+        : "";
+      return `
+        <div data-mapped-item-index="${index}" style="display:grid; grid-template-columns:minmax(220px, 2fr) minmax(170px, 1fr) minmax(150px, 1fr) auto; gap:10px; align-items:end; margin-bottom:10px;">
+          <div class="form-group" style="margin:0;">
+            <label for="sensor-mapped-item-id-${index}">Connected App Item</label>
+            ${items.length
+              ? `<select id="sensor-mapped-item-id-${index}" class="form-control">${options}</select>`
+              : `<input id="sensor-mapped-item-id-${index}" class="form-control" value="${escapeHtml(item.id)}" placeholder="Command / entity / IDX">`}
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label for="sensor-mapped-item-label-${index}">Colony Label</label>
+            <input id="sensor-mapped-item-label-${index}" class="form-control" value="${escapeHtml(item.label)}" placeholder="Brood heater, nest power, door sensor...">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label for="sensor-mapped-item-kind-${index}">Kind</label>
+            <select id="sensor-mapped-item-kind-${index}" class="form-control">${this.getConnectorMappedItemKindOptions(item.kind || "generic")}</select>
+          </div>
+          <button class="btn btn-secondary" type="button" style="height:40px;" onclick="app.removeColonyMappedConnectorItem(${index})">Remove</button>
+          <div class="form-group" style="grid-column:1 / span 3; margin:0;">
+            <label for="sensor-mapped-item-media-${index}">Media URL (optional for camera stream/picture)</label>
+            <input id="sensor-mapped-item-media-${index}" class="form-control" value="${escapeHtml(item.mediaUrl || "")}" placeholder="https://camera.local/stream or snapshot URL">
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    panel.innerHTML = `
+      <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px;">
+        <div>
+          <h3 class="card-title" style="margin:0;">Domotic Connector Mapping</h3>
+          <div style="font-size:13px; color:var(--text-secondary); margin-top:6px;">Select the connector and provide the API parameters required to read this colony's temperature and humidity sensors.</div>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted);">${escapeHtml(statusText)}</div>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
+        <div class="form-group">
+          <label for="sensor-connector-type">Connector</label>
+          <select id="sensor-connector-type" class="form-control" onchange="app.renderColonySensorConnectorPanel()">
+            <option value="none" ${config.type === "none" ? "selected" : ""}>None / Local simulation</option>
+            <option value="home_assistant" ${isHA ? "selected" : ""}>Home Assistant</option>
+            <option value="jeedom" ${isJeedom ? "selected" : ""}>Jeedom</option>
+            <option value="domoticz" ${isDomoticz ? "selected" : ""}>Domoticz</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sensor-connector-base-url">Base URL</label>
+          <input id="sensor-connector-base-url" class="form-control" value="${escapeHtml(config.baseUrl)}" placeholder="http://homeassistant.local:8123">
+        </div>
+      </div>
+      ${isHA ? `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-top:16px;">
+          <div class="form-group">
+            <label for="sensor-ha-token">Long-Lived Access Token</label>
+            <input id="sensor-ha-token" type="password" class="form-control" value="${escapeHtml(config.accessToken)}" placeholder="Bearer token">
+          </div>
+          <div class="form-group">
+            <label for="sensor-ha-temp-entity">Temperature Entity ID</label>
+            ${items.length ? `<select id="sensor-ha-temp-entity" class="form-control">${tempOptions}</select>` : `<input id="sensor-ha-temp-entity" class="form-control" value="${escapeHtml(config.temperatureEntityId)}" placeholder="sensor.formicarium_temperature">`}
+          </div>
+          <div class="form-group">
+            <label for="sensor-ha-humidity-entity">Humidity Entity ID</label>
+            ${items.length ? `<select id="sensor-ha-humidity-entity" class="form-control">${humidityOptions}</select>` : `<input id="sensor-ha-humidity-entity" class="form-control" value="${escapeHtml(config.humidityEntityId)}" placeholder="sensor.formicarium_humidity">`}
+          </div>
+        </div>
+      ` : ""}
+      ${isJeedom ? `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-top:16px;">
+          <div class="form-group">
+            <label for="sensor-jeedom-api-key">API Key</label>
+            <input id="sensor-jeedom-api-key" type="password" class="form-control" value="${escapeHtml(config.apiKey)}" placeholder="Jeedom API key">
+          </div>
+          <div class="form-group">
+            <label for="sensor-jeedom-temp-cmd">Temperature Command ID</label>
+            ${items.length ? `<select id="sensor-jeedom-temp-cmd" class="form-control">${tempOptions}</select>` : `<input id="sensor-jeedom-temp-cmd" class="form-control" value="${escapeHtml(config.temperatureCmdId)}" placeholder="1234">`}
+          </div>
+          <div class="form-group">
+            <label for="sensor-jeedom-humidity-cmd">Humidity Command ID</label>
+            ${items.length ? `<select id="sensor-jeedom-humidity-cmd" class="form-control">${humidityOptions}</select>` : `<input id="sensor-jeedom-humidity-cmd" class="form-control" value="${escapeHtml(config.humidityCmdId)}" placeholder="1235">`}
+          </div>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:10px;">Jeedom discovery uses the documented <code>fullData</code> HTTP API response, including generic types such as air-quality style sensors when available, and live reads use <code>type=cmd&amp;id=&lt;command id&gt;</code>.</div>
+      ` : ""}
+      ${isDomoticz ? `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-top:16px;">
+          <div class="form-group">
+            <label for="sensor-domoticz-username">Username</label>
+            <input id="sensor-domoticz-username" class="form-control" value="${escapeHtml(config.username)}" placeholder="Optional basic auth username">
+          </div>
+          <div class="form-group">
+            <label for="sensor-domoticz-password">Password</label>
+            <input id="sensor-domoticz-password" type="password" class="form-control" value="${escapeHtml(config.password)}" placeholder="Optional basic auth password">
+          </div>
+          <div class="form-group">
+            <label for="sensor-domoticz-temp-idx">Temperature Device IDX</label>
+            ${items.length ? `<select id="sensor-domoticz-temp-idx" class="form-control">${tempOptions}</select>` : `<input id="sensor-domoticz-temp-idx" class="form-control" value="${escapeHtml(config.temperatureIdx)}" placeholder="12">`}
+          </div>
+          <div class="form-group">
+            <label for="sensor-domoticz-humidity-idx">Humidity Device IDX</label>
+            ${items.length ? `<select id="sensor-domoticz-humidity-idx" class="form-control">${humidityOptions}</select>` : `<input id="sensor-domoticz-humidity-idx" class="form-control" value="${escapeHtml(config.humidityIdx)}" placeholder="13">`}
+          </div>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:10px;">Domoticz discovery and live reads use the documented JSON API pattern <code>json.htm?type=command&amp;param=getdevices</code>, with <code>rid=&lt;idx&gt;</code> for specific devices.</div>
+      ` : ""}
+      ${config.type !== "none" ? `
+        <div style="border-top:1px solid var(--border-color); margin-top:18px; padding-top:18px;">
+          <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+            <div>
+              <div style="font-size:14px; font-weight:600;">Colony Mapped Items</div>
+              <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Add or remove Jeedom, Home Assistant, or Domoticz items linked to this colony. Jeedom item typing follows its documented generic types when available.</div>
+            </div>
+            <button class="btn btn-secondary" type="button" onclick="app.addColonyMappedConnectorItem()">Add Item</button>
+          </div>
+          ${mappedItemRows || `<div style="font-size:12px; color:var(--text-muted); padding:10px 0;">No mapped items yet. Discover connector items, then add the ones you want attached to this colony.</div>`}
+        </div>
+      ` : ""}
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;">
+        <button class="btn btn-primary" type="button" onclick="app.saveColonySensorConnectorConfig()">Save Sensor Connector</button>
+        ${config.type !== "none" ? `<button class="btn btn-secondary" type="button" onclick="app.discoverColonyConnectorSensors()">Discover Sensors</button>` : ""}
+        ${config.type !== "none" ? `<button class="btn btn-secondary" type="button" onclick="app.refreshSelectedColonySensorReadings({ force: true, showErrors: true })">Load Live Readings</button>` : ""}
+      </div>
+    `;
+  }
+
+  collectColonySensorConnectorConfigFromForm() {
+    const type = document.getElementById("sensor-connector-type")?.value || "none";
+    const config = {
+      type,
+      baseUrl: document.getElementById("sensor-connector-base-url")?.value.trim() || "",
+      mappedItems: []
+    };
+    if (type === "home_assistant") {
+      config.accessToken = document.getElementById("sensor-ha-token")?.value.trim() || "";
+      config.temperatureEntityId = document.getElementById("sensor-ha-temp-entity")?.value.trim() || "";
+      config.humidityEntityId = document.getElementById("sensor-ha-humidity-entity")?.value.trim() || "";
+    } else if (type === "jeedom") {
+      config.apiKey = document.getElementById("sensor-jeedom-api-key")?.value.trim() || "";
+      config.temperatureCmdId = document.getElementById("sensor-jeedom-temp-cmd")?.value.trim() || "";
+      config.humidityCmdId = document.getElementById("sensor-jeedom-humidity-cmd")?.value.trim() || "";
+    } else if (type === "domoticz") {
+      config.username = document.getElementById("sensor-domoticz-username")?.value.trim() || "";
+      config.password = document.getElementById("sensor-domoticz-password")?.value.trim() || "";
+      config.temperatureIdx = document.getElementById("sensor-domoticz-temp-idx")?.value.trim() || "";
+      config.humidityIdx = document.getElementById("sensor-domoticz-humidity-idx")?.value.trim() || "";
+    }
+    const discoveredItems = this.getDiscoveredConnectorItems(this.selectedColonyId);
+    const rows = Array.from(document.querySelectorAll("[data-mapped-item-index]"));
+    config.mappedItems = rows.map((row, index) => {
+      const id = document.getElementById(`sensor-mapped-item-id-${index}`)?.value.trim() || "";
+      const labelInput = document.getElementById(`sensor-mapped-item-label-${index}`)?.value.trim() || "";
+      const kindInput = document.getElementById(`sensor-mapped-item-kind-${index}`)?.value.trim() || "generic";
+      const mediaUrl = document.getElementById(`sensor-mapped-item-media-${index}`)?.value.trim() || "";
+      const discovered = discoveredItems.find(item => String(item.id) === id);
+      return {
+        id,
+        label: labelInput || (discovered ? discovered.label : id),
+        kind: (kindInput && kindInput !== "generic") ? kindInput : (discovered ? discovered.kind : "generic"),
+        unit: discovered && discovered.unit ? discovered.unit : "",
+        genericType: discovered && discovered.genericType ? discovered.genericType : "",
+        mediaUrl: mediaUrl || (discovered && discovered.mediaUrl ? discovered.mediaUrl : "")
+      };
+    }).filter(item => item.id);
+    return config;
+  }
+
+  addColonyMappedConnectorItem() {
+    const config = this.collectColonySensorConnectorConfigFromForm();
+    config.mappedItems = [...(config.mappedItems || []), { id: "", label: "", kind: "generic", unit: "", genericType: "", mediaUrl: "" }];
+    this.renderColonySensorConnectorPanel(config);
+  }
+
+  removeColonyMappedConnectorItem(index) {
+    const config = this.collectColonySensorConnectorConfigFromForm();
+    config.mappedItems = (config.mappedItems || []).filter((_, itemIndex) => itemIndex !== index);
+    this.renderColonySensorConnectorPanel(config);
+  }
+
+  isColonySensorConfigComplete(config) {
+    if (!config || !config.type || config.type === "none") return false;
+    if (!config.baseUrl) return false;
+    const hasMappedItems = Array.isArray(config.mappedItems) && config.mappedItems.some(item => item && item.id);
+    if (config.type === "home_assistant") {
+      return Boolean(config.accessToken && ((config.temperatureEntityId && config.humidityEntityId) || hasMappedItems));
+    }
+    if (config.type === "jeedom") {
+      return Boolean(config.apiKey && ((config.temperatureCmdId && config.humidityCmdId) || hasMappedItems));
+    }
+    if (config.type === "domoticz") {
+      return Boolean((config.temperatureIdx && config.humidityIdx) || hasMappedItems);
+    }
+    return false;
+  }
+
+  async saveColonySensorConnectorConfig() {
+    const col = this.getSelectedColony();
+    if (!col) return;
+    if (!this.hasPermission("write")) {
+      alert("You do not have permission to modify this colony.");
+      return;
+    }
+    const config = this.collectColonySensorConnectorConfigFromForm();
+    col.sensorConnector = config;
+    await this.writeRecord("colonies", col);
+    this.renderColonySensorsTab();
+  }
+
+  async discoverColonyConnectorSensors() {
+    const col = this.getSelectedColony();
+    if (!col) return;
+    const config = this.collectColonySensorConnectorConfigFromForm();
+    if (!config.type || config.type === "none") {
+      alert("Select a connector first.");
+      return;
+    }
+    if (!config.baseUrl) {
+      alert("Base URL is required before discovery.");
+      return;
+    }
+    try {
+      this.colonySensorLoading = true;
+      this.renderColonySensorConnectorPanel();
+      const payload = await this.apiRequest("/api/connectors/discover", {
+        method: "POST",
+        body: JSON.stringify({ config })
+      });
+      this.colonySensorDiscoveryCache[col.id] = payload.items || [];
+      this.renderColonySensorConnectorPanel();
+    } catch (err) {
+      alert(err.message || "Sensor discovery failed.");
+    } finally {
+      this.colonySensorLoading = false;
+      this.renderColonySensorConnectorPanel();
+    }
+  }
+
+  async refreshSelectedColonySensorReadings(options = {}) {
+    const { force = false, showErrors = false } = options;
+    const col = this.getSelectedColony();
+    if (!col) return;
+    const config = this.getColonySensorConnectorConfig(col);
+    if (!this.isColonySensorConfigComplete(config)) {
+      this.renderColonySensorReadings();
+      this.renderColonySensorChart();
+      return;
+    }
+    if (this.colonySensorLoading && !force) return;
+    try {
+      this.colonySensorLoading = true;
+      this.renderColonySensorConnectorPanel();
+      const payload = await this.apiRequest("/api/connectors/readings", {
+        method: "POST",
+        body: JSON.stringify({ colonyId: col.id, config })
+      });
+      this.colonySensorReadingsCache[col.id] = {
+        ...payload,
+        loadedAt: new Date().toISOString()
+      };
+    } catch (err) {
+      this.colonySensorReadingsCache[col.id] = {
+        error: err.message || "Unable to fetch connector readings."
+      };
+      if (showErrors) {
+        alert(err.message || "Unable to fetch connector readings.");
+      }
+    } finally {
+      this.colonySensorLoading = false;
+      this.renderColonySensorConnectorPanel();
+      this.renderColonySensorReadings();
+      this.renderColonySensorChart();
+    }
+  }
+
+  renderColonySensorReadings() {
+    const tempEl = document.getElementById("colony-sensor-status-temp");
+    const humEl = document.getElementById("colony-sensor-status-humidity");
+    if (!tempEl || !humEl) return;
+
+    const col = this.getSelectedColony();
+    const config = this.getColonySensorConnectorConfig(col);
+    const live = col ? this.colonySensorReadingsCache[col.id] || {} : {};
+    const fallback = window.sensorCache || {};
+
+    let tempValue = live.temperature && live.temperature.value !== undefined
+      ? `${live.temperature.value}${live.temperature.unit || ""}`
+      : (fallback["sensor-temp-1"] ? `${fallback["sensor-temp-1"]}°C` : "Not configured");
+    let humValue = live.humidity && live.humidity.value !== undefined
+      ? `${live.humidity.value}${live.humidity.unit || ""}`
+      : (fallback["sensor-hum-1"] ? `${fallback["sensor-hum-1"]}%` : "Not configured");
+
+    const connectorLabel = config.type && config.type !== "none"
+      ? config.type.replace(/_/g, " ")
+      : "local simulation";
+    const errorText = live.error ? `<div style="font-size:12px; color:var(--accent-danger); margin-top:8px;">${escapeHtml(live.error)}</div>` : "";
+
+    tempEl.innerHTML = `
+      <h3 class="card-title">Temperature</h3>
+      <div style="font-size: 32px; font-family: var(--font-heading); font-weight:700; color: var(--accent-danger); margin: 8px 0;">
+        ${escapeHtml(String(tempValue))}
+      </div>
+      <p style="font-size:12px; color: var(--text-secondary);">Source: ${escapeHtml(connectorLabel)}</p>
+      ${live.temperature && live.temperature.source ? `<div style="font-size:11px; color:var(--text-muted); margin-top:6px;">Sensor: ${escapeHtml(live.temperature.source)}</div>` : ""}
+      ${errorText}
+    `;
+
+    humEl.innerHTML = `
+      <h3 class="card-title">Humidity</h3>
+      <div style="font-size: 32px; font-family: var(--font-heading); font-weight:700; color: var(--accent-info); margin: 8px 0;">
+        ${escapeHtml(String(humValue))}
+      </div>
+      <p style="font-size:12px; color: var(--text-secondary);">Source: ${escapeHtml(connectorLabel)}</p>
+      ${live.humidity && live.humidity.source ? `<div style="font-size:11px; color:var(--text-muted); margin-top:6px;">Sensor: ${escapeHtml(live.humidity.source)}</div>` : ""}
+      ${errorText}
+    `;
   }
 
   // --- Router / View Switching ---
@@ -4005,6 +4520,14 @@ class AntaiApp {
     this.navigate(target.view, target.params || {});
   }
 
+  finishTransientView(options = {}) {
+    const fallbackView = options.fallbackView || "dashboard";
+    const fallbackParams = options.fallbackParams || {};
+    const target = this.transientViewReturnState || { view: fallbackView, params: fallbackParams };
+    this.transientViewReturnState = null;
+    this.navigate(target.view, target.params || {});
+  }
+
   async onViewRender(viewName) {
     switch (viewName) {
       case "dashboard":
@@ -4024,6 +4547,9 @@ class AntaiApp {
         break;
       case "colony-detail":
         this.renderColonyDetail();
+        if (this.activeColonyTab === "colony-tab-sensors") {
+          this.renderColonySensorsTab();
+        }
         break;
       case "reminders":
         this.renderReminders();
@@ -4226,12 +4752,21 @@ class AntaiApp {
       <button class="btn ${this.projectEditMode ? "btn-primary" : "btn-secondary"}" type="button" title="${this.projectEditMode ? "Close project editor" : "Edit project"}" aria-label="${this.projectEditMode ? "Close project editor" : "Edit project"}" onclick="app.toggleProjectEditMode()" style="padding:6px 10px; min-width:38px; margin-left:auto;">✎</button>
     ` : "";
 
+    const projectStatus = activeProj.status || "active";
+    const projectArchiveBtnHtml = isManager && activeProj.uuid !== "proj-default" ? `
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+        <button class="btn btn-secondary" style="width:100%; font-size:12px; padding:8px;" onclick="app.toggleProjectArchive()">
+          ${projectStatus === "archived" ? "Unarchive Project" : "Archive Project"}
+        </button>
+      </div>
+    ` : "";
+
     let deleteBtnHtml = "";
     if (isOwner && activeProj.uuid !== "proj-default") {
       deleteBtnHtml = `
         <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
           <button class="btn btn-danger" style="width:100%; font-size:12px; padding:8px;" onclick="app.deleteActiveProject()">
-            ⚠️ Delete Project (Deletes metadata file on disk)
+            Delete Project
           </button>
         </div>
       `;
@@ -4251,6 +4786,10 @@ class AntaiApp {
           <span class="project-meta-value" style="font-size:16px; font-weight:600;">${activeProj.name}</span>
         </div>
         <div class="project-meta-item">
+          <span class="project-meta-label">Status</span>
+          <span class="project-meta-value" style="font-weight:600; color:${projectStatus === "archived" ? "var(--accent-danger)" : "var(--accent-primary)"};">${projectStatus.toUpperCase()}</span>
+        </div>
+        <div class="project-meta-item">
           <span class="project-meta-label">Owner</span>
           <span class="project-meta-value">${ownerUser.username} (${ownerUser.email || 'No email'})</span>
         </div>
@@ -4259,6 +4798,7 @@ class AntaiApp {
           <span class="project-meta-value" style="color:var(--accent-primary); font-weight:600;">${userRole.toUpperCase()}</span>
         </div>
         ${projectSettingsHtml}
+        ${projectArchiveBtnHtml}
         ${deleteBtnHtml}
       </div>
     `;
@@ -4409,14 +4949,46 @@ class AntaiApp {
       return;
     }
 
-    if (!confirm(`Are you absolutely sure you want to delete "${activeProj.name}"?\nThis will remove the project metadata file and its association.`)) {
+    if (!confirm(`Are you absolutely sure you want to delete "${activeProj.name}"?\nThis will permanently remove the project and all colonies, reminders, maps, zones, rules, and other files inside it.`)) {
       return;
     }
 
+    const projectColonies = this.colonies.filter(c => c.projectId === activeProj.uuid);
     await this.deleteRecord("projects", activeProj.uuid, activeProj);
     this.projects = this.projects.filter(p => p.uuid !== activeProj.uuid);
+    const deletedColonyIds = new Set(projectColonies.map(colony => colony.id));
+    this.colonies = this.colonies.filter(c => c.projectId !== activeProj.uuid);
+    this.events = this.events.filter(e => !deletedColonyIds.has(e.colonyId));
+    this.reminders = this.reminders.filter(r => !deletedColonyIds.has(r.colonyId));
+    this.maps = this.maps.filter(m => m.projectId !== activeProj.uuid);
+    this.zones = this.zones.filter(z => z.projectId !== activeProj.uuid);
+    this.automationRules = this.automationRules.filter(rule => rule.projectId !== activeProj.uuid);
     this.setActiveProject("proj-default");
     alert("Project deleted successfully.");
+  }
+
+  async toggleProjectArchive() {
+    const activeProj = this.getActiveProject();
+    if (!activeProj) return;
+    if (activeProj.uuid === "proj-default") {
+      alert("The Default Project cannot be archived.");
+      return;
+    }
+    if (!this.hasPermission("write")) {
+      alert("You do not have permission to modify this project.");
+      return;
+    }
+
+    const nextStatus = activeProj.status === "archived" ? "active" : "archived";
+    const actionLabel = nextStatus === "archived" ? "archive" : "unarchive";
+    if (!confirm(`Are you sure you want to ${actionLabel} "${activeProj.name}"?`)) {
+      return;
+    }
+
+    activeProj.status = nextStatus;
+    await this.writeRecord("projects", activeProj);
+    this.renderSidebar();
+    this.renderProjectsView();
   }
 
   async grantProjectAccess(event) {
@@ -4535,6 +5107,7 @@ class AntaiApp {
         const m = p.members.find(mem => mem.userUuid === this.currentUser.uuid);
         if (m) role = m.role.charAt(0).toUpperCase() + m.role.slice(1);
       }
+      const statusBadge = p.status === "archived" ? `<span class="tree-project-badge" style="background:rgba(231,111,81,0.16); color:var(--accent-danger);">Archived</span>` : "";
 
       const coloniesHtml = projectColonies.map(c => {
         const isColonyActive = this.currentView === "colony-detail" && this.selectedColonyId === c.id;
@@ -4552,6 +5125,7 @@ class AntaiApp {
             <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
             <span class="tree-project-name">${p.name}</span>
             <span class="tree-project-badge">${role}</span>
+            ${statusBadge}
             <button class="btn-create-colony-tree-icon" onclick="event.stopPropagation(); app.showAddColonyForProject('${p.uuid}')" title="Add Colony to this Project">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -5184,7 +5758,8 @@ class AntaiApp {
         actionsHtml += `<button class="btn ${this.colonyDetailEditMode ? "btn-primary" : "btn-secondary"}" type="button" title="${this.colonyDetailEditMode ? "Close colony editor" : "Edit colony"}" aria-label="${this.colonyDetailEditMode ? "Close colony editor" : "Edit colony"}" onclick="app.toggleColonyDetailEditMode()" style="padding:6px 10px; min-width:38px;">✎</button>`;
       }
       if (this.hasPermission("delete_colony")) {
-        actionsHtml += `<button class="btn btn-danger" style="background-color:rgba(231,111,81,0.15); color:var(--accent-danger); border:1px solid rgba(231,111,81,0.3);" onclick="app.archiveColony('${col.id}')">Archive Colony</button>`;
+        actionsHtml += `<button class="btn btn-secondary" onclick="app.archiveColony('${col.id}')">${col.status === "archived" ? "Unarchive Colony" : "Archive Colony"}</button>`;
+        actionsHtml += `<button class="btn btn-danger" style="background-color:rgba(231,111,81,0.15); color:var(--accent-danger); border:1px solid rgba(231,111,81,0.3);" onclick="app.deleteColony('${col.id}')">Delete Colony</button>`;
       }
       actionsEl.innerHTML = actionsHtml;
     }
@@ -5528,6 +6103,55 @@ class AntaiApp {
     const container = document.getElementById("colony-sensor-chart-container");
     if (!container) return;
 
+    const col = this.getSelectedColony();
+    const live = col ? this.colonySensorReadingsCache[col.id] || {} : {};
+    const config = this.getColonySensorConnectorConfig(col);
+    const mappedItems = Array.isArray(live.mappedItems) ? live.mappedItems : [];
+    if (config.type && config.type !== "none" && (live.temperature || live.humidity || live.error || mappedItems.length)) {
+      const mappedItemCards = mappedItems.map(item => {
+        const reading = item.reading || {};
+        const valueText = reading.value !== undefined && reading.value !== null
+          ? `${reading.value}${reading.unit || item.unit || ""}`
+          : "Unavailable";
+        const sourceText = reading.source || item.id || "Not set";
+        const mediaUrl = item.mediaUrl || "";
+        let contentHtml = `
+          <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted);">${escapeHtml(item.kind || "mapped")}</div>
+          <div style="font-size:16px; font-weight:700; margin-top:6px;">${escapeHtml(item.label || item.id || "Mapped Item")}</div>
+          <div style="font-size:13px; color:var(--text-secondary); margin-top:8px;">Current: ${escapeHtml(String(valueText))}</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:8px;">Source: ${escapeHtml(sourceText)}</div>
+        `;
+        if (mediaUrl && item.kind === "camera_picture") {
+          contentHtml += `<div style="margin-top:12px;"><img src="${escapeHtml(mediaUrl)}" alt="${escapeHtml(item.label || item.id || "Camera picture")}" style="width:100%; max-height:180px; object-fit:cover; border-radius:var(--radius-sm); border:1px solid var(--border-color);"></div>`;
+        } else if (mediaUrl && item.kind === "camera_stream") {
+          contentHtml += `<div style="margin-top:12px;"><a class="btn btn-secondary" href="${escapeHtml(mediaUrl)}" target="_blank" rel="noopener">Open Camera Stream</a></div>`;
+        }
+        return `<div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px;">${contentHtml}</div>`;
+      }).join("");
+      container.innerHTML = `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px;">
+          <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px;">
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted);">Connector</div>
+            <div style="font-size:18px; font-weight:700; margin-top:6px;">${escapeHtml(config.type.replace(/_/g, " "))}</div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:8px;">${escapeHtml(config.baseUrl || "")}</div>
+          </div>
+          <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px;">
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted);">Temperature Sensor</div>
+            <div style="font-size:14px; font-weight:600; margin-top:6px;">${escapeHtml((live.temperature && live.temperature.source) || config.temperatureEntityId || config.temperatureCmdId || config.temperatureIdx || "Not set")}</div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:8px;">Current: ${escapeHtml(String(live.temperature && live.temperature.value !== undefined ? `${live.temperature.value}${live.temperature.unit || ""}` : "Unavailable"))}</div>
+          </div>
+          <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:16px;">
+            <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted);">Humidity Sensor</div>
+            <div style="font-size:14px; font-weight:600; margin-top:6px;">${escapeHtml((live.humidity && live.humidity.source) || config.humidityEntityId || config.humidityCmdId || config.humidityIdx || "Not set")}</div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:8px;">Current: ${escapeHtml(String(live.humidity && live.humidity.value !== undefined ? `${live.humidity.value}${live.humidity.unit || ""}` : "Unavailable"))}</div>
+          </div>
+        </div>
+        ${mappedItemCards ? `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-top:16px;">${mappedItemCards}</div>` : ""}
+        ${live.error ? `<div style="margin-top:16px; color:var(--accent-danger); font-size:12px;">${escapeHtml(live.error)}</div>` : `<div style="margin-top:16px; font-size:12px; color:var(--text-muted);">This build reads live connector values and sensor identifiers. Historical trend import can be added later once a stable history endpoint strategy is chosen for each connector.</div>`}
+      `;
+      return;
+    }
+
     // Generate points for last 24 hours (simulated)
     const pointsCount = 10;
     const width = 600;
@@ -5856,7 +6480,7 @@ class AntaiApp {
       this.newsList = payload.articles || [];
       this.newsSyncStatus = payload;
     } catch (err) {
-      console.warn("Failed to refresh RSS news:", err);
+      this.logWarn("news.refresh_failed", "Failed to refresh RSS feeds.", { error: err.message || String(err) });
       this.newsSyncStatus = { errors: [{ message: err.message }], fromCache: true };
     }
   }
@@ -6027,6 +6651,304 @@ class AntaiApp {
     }
   }
 
+  getConnectorMeta(connector) {
+    if (connector === "ha") {
+      return {
+        key: "ha",
+        settingsKey: "home_assistant",
+        label: "Home Assistant",
+        flag: "haConnected",
+        buttonId: "ha-connect-btn",
+        statusId: "ha-status-label",
+        fields: [
+          { id: "baseUrl", label: "Base URL", type: "text", placeholder: "http://homeassistant.local:8123", required: true },
+          { id: "accessToken", label: "Long-Lived Access Token", type: "password", placeholder: "Bearer token", required: true }
+        ]
+      };
+    }
+    if (connector === "jeedom") {
+      return {
+        key: "jeedom",
+        settingsKey: "jeedom",
+        label: "Jeedom",
+        flag: "jeedomConnected",
+        buttonId: "jeedom-connect-btn",
+        statusId: "jeedom-status-label",
+        fields: [
+          { id: "baseUrl", label: "Base URL", type: "text", placeholder: "http://jeedom.local", required: true },
+          { id: "apiKey", label: "API Key", type: "password", placeholder: "Jeedom API key", required: true }
+        ]
+      };
+    }
+    if (connector === "domoticz") {
+      return {
+        key: "domoticz",
+        settingsKey: "domoticz",
+        label: "Domoticz",
+        flag: "domoticzConnected",
+        buttonId: "domoticz-connect-btn",
+        statusId: "domoticz-status-label",
+        fields: [
+          { id: "baseUrl", label: "Base URL", type: "text", placeholder: "http://domoticz.local:8080", required: true },
+          { id: "username", label: "Username", type: "text", placeholder: "Optional basic auth username", required: false },
+          { id: "password", label: "Password", type: "password", placeholder: "Optional basic auth password", required: false }
+        ]
+      };
+    }
+    return null;
+  }
+
+  getConnectorSettingsStore() {
+    if (!this.connectorSettings || typeof this.connectorSettings !== "object") {
+      this.connectorSettings = {};
+    }
+    return this.connectorSettings;
+  }
+
+  getConnectorSettings(connector) {
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return {};
+    const store = this.getConnectorSettingsStore();
+    const existing = store[meta.settingsKey];
+    return existing && typeof existing === "object" ? { ...existing } : {};
+  }
+
+  getConnectorConnectionStates() {
+    if (!this.currentUser || typeof this.currentUser !== "object") return {};
+    if (!this.currentUser.connectorConnectionStates || typeof this.currentUser.connectorConnectionStates !== "object") {
+      this.currentUser.connectorConnectionStates = {};
+    }
+    return this.currentUser.connectorConnectionStates;
+  }
+
+  getConnectorConnectionState(connector) {
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return null;
+    const states = this.getConnectorConnectionStates();
+    const value = states[meta.settingsKey];
+    return value && typeof value === "object" ? { ...value } : null;
+  }
+
+  setConnectorConnectionState(connector, state) {
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return;
+    const states = this.getConnectorConnectionStates();
+    states[meta.settingsKey] = {
+      status: state && state.status ? state.status : "disconnected",
+      error: state && state.error ? state.error : "",
+      checkedAt: new Date().toISOString()
+    };
+  }
+
+  getConnectorDomainFileName(baseUrl) {
+    try {
+      const parsed = new URL(String(baseUrl || "").trim());
+      const host = `${parsed.hostname || "connector"}${parsed.port ? `_${parsed.port}` : ""}`;
+      return `${host.replace(/[^a-zA-Z0-9._-]/g, "_").toLowerCase() || "connector"}.json`;
+    } catch (err) {
+      return `${sanitizeSlug(String(baseUrl || "connector").replace(/[:/]+/g, "-")) || "connector"}.json`;
+    }
+  }
+
+  getConnectorConfigDefaults(type) {
+    if (type === "home_assistant") return this.getConnectorSettings("ha");
+    if (type === "jeedom") return this.getConnectorSettings("jeedom");
+    if (type === "domoticz") return this.getConnectorSettings("domoticz");
+    return {};
+  }
+
+  isConnectorConfigured(connector) {
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return false;
+    const settings = this.getConnectorSettings(connector);
+    return meta.fields.every(field => {
+      if (!field.required) return true;
+      return Boolean(String(settings[field.id] || "").trim());
+    });
+  }
+
+  getConnectorStatusText(connector) {
+    const meta = this.getConnectorMeta(connector);
+    if (!meta || !this.currentUser) return "Status: Disconnected ❌";
+    const connectionState = this.getConnectorConnectionState(connector);
+    if (connectionState && connectionState.status === "connected") {
+      return "Status: Connected ✅";
+    }
+    if (connectionState && connectionState.status === "failure") {
+      return `Status: Failure ❌${connectionState.error ? ` (${connectionState.error})` : ""}`;
+    }
+    const connected = Boolean(this.currentUser[meta.flag]);
+    if (connected) return "Status: Connected ✅";
+    if (this.isConnectorConfigured(connector)) return "Status: Ready to connect";
+    return "Status: Missing API settings";
+  }
+
+  renderConnectorCardState(connector) {
+    const meta = this.getConnectorMeta(connector);
+    if (!meta || !this.currentUser) return;
+    const statusEl = document.getElementById(meta.statusId);
+    if (statusEl) statusEl.innerText = this.getConnectorStatusText(connector);
+    const buttonEl = document.getElementById(meta.buttonId);
+    if (buttonEl) {
+      const connected = Boolean(this.currentUser[meta.flag]);
+      buttonEl.innerText = connected ? "Disconnect" : "Connect";
+    }
+  }
+
+  showConnectorSettingsModal(connector) {
+    if (!this.currentUser) return;
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return;
+    this.activeConnectorSettingsKey = connector;
+
+    const titleEl = document.getElementById("connector-settings-title");
+    const subtitleEl = document.getElementById("connector-settings-subtitle");
+    const kindEl = document.getElementById("connector-settings-kind");
+    const fieldsEl = document.getElementById("connector-settings-fields");
+    const formEl = document.getElementById("connector-settings-form");
+    if (!titleEl || !subtitleEl || !kindEl || !fieldsEl || !formEl) return;
+
+    const settings = this.getConnectorSettings(connector);
+    titleEl.innerText = `${meta.label} API Settings`;
+    subtitleEl.innerText = "Save the API connection parameters here. Sensor-specific IDs stay configured per colony in the Sensors tab.";
+    kindEl.value = connector;
+    fieldsEl.innerHTML = meta.fields.map(field => `
+      <div class="form-group">
+        <label for="connector-setting-${field.id}">${escapeHtml(field.label)}${field.required ? " *" : ""}</label>
+        <input
+          id="connector-setting-${field.id}"
+          class="form-control"
+          type="${field.type}"
+          value="${escapeHtml(settings[field.id] || "")}"
+          placeholder="${escapeHtml(field.placeholder || "")}"
+          ${field.required ? "required" : ""}
+        >
+      </div>
+    `).join("");
+    formEl.onsubmit = async (e) => {
+      e.preventDefault();
+      await this.saveConnectorSettingsFromModal();
+    };
+
+    this.showModal("modal-connector-settings");
+  }
+
+  async persistCurrentUserProfile() {
+    if (!this.currentUser) return;
+    this.saveData();
+    if (!this.isFileMode()) {
+      const updatedUser = await this.apiRequest("/api/profile", {
+        method: "POST",
+        body: JSON.stringify({ user: this.currentUser, oldEmail: this.currentUser.email })
+      });
+      this.currentUser = updatedUser;
+      const userIndex = this.users.findIndex(user => user.uuid === updatedUser.uuid);
+      if (userIndex !== -1) {
+        this.users[userIndex] = { ...this.users[userIndex], ...updatedUser };
+      }
+      return;
+    }
+    if (this.workspaceDir) {
+      if (!this.currentUser._fileName) {
+        this.currentUser._fileName = `${sanitizeSlug(this.currentUser.username)}.md`;
+      }
+      await this.writeWorkspaceFile(["app", "users"], this.currentUser._fileName, this.currentUser);
+    }
+  }
+
+  async persistConnectorSettings(connector, settings) {
+    const config = this.buildConnectorTestConfig(connector, settings);
+    if (!config) return;
+    const store = this.getConnectorSettingsStore();
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return;
+    store[meta.settingsKey] = { ...config };
+    this.saveData();
+    if (!this.isFileMode()) {
+      const payload = await this.apiRequest("/api/connectors/settings", {
+        method: "POST",
+        body: JSON.stringify({ config })
+      });
+      if (payload && payload.config) {
+        store[meta.settingsKey] = { ...payload.config };
+      }
+      return;
+    }
+    if (this.workspaceDir) {
+      try {
+        let connectorsDir = await this.workspaceDir.getDirectoryHandle("app", { create: true });
+        connectorsDir = await connectorsDir.getDirectoryHandle("connectors", { create: true });
+        for await (const entry of connectorsDir.values()) {
+          if (entry.kind !== "file" || !entry.name.endsWith(".json")) continue;
+          if (entry.name === this.getConnectorDomainFileName(config.baseUrl)) continue;
+          try {
+            const file = await entry.getFile();
+            const parsed = JSON.parse(await file.text());
+            if (parsed && parsed.type === meta.settingsKey) {
+              await connectorsDir.removeEntry(entry.name);
+            }
+          } catch (e) {
+            this.logWarn("connectors.file.inspect_failed", "Failed to inspect connector config file in workspace.", { fileName: entry.name, error: e.message || String(e) });
+          }
+        }
+      } catch (e) {
+        this.logWarn("connectors.file.prune_failed", "Failed to prune old connector config files.", { error: e.message || String(e) });
+      }
+      const fileName = this.getConnectorDomainFileName(config.baseUrl);
+      await this.writeWorkspaceFile(["app", "connectors"], fileName, config, false);
+    }
+  }
+
+  async persistAppSettings() {
+    const settings = {
+      logLevel: this.getAppLogLevel()
+    };
+    this.appSettings = settings;
+    this.saveData();
+    if (!this.isFileMode()) {
+      const payload = await this.apiRequest("/api/settings/app", {
+        method: "POST",
+        body: JSON.stringify(settings)
+      });
+      if (payload && payload.settings) {
+        this.appSettings = {
+          logLevel: this.normalizeLogLevel(payload.settings.logLevel)
+        };
+      }
+      return;
+    }
+    if (this.workspaceDir) {
+      await this.writeWorkspaceFile(["app"], "settings.json", settings, false);
+    }
+  }
+
+  async saveConnectorSettingsFromModal() {
+    if (!this.currentUser) return;
+    const connector = document.getElementById("connector-settings-kind")?.value || this.activeConnectorSettingsKey;
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return;
+
+    const nextSettings = {};
+    for (const field of meta.fields) {
+      const value = document.getElementById(`connector-setting-${field.id}`)?.value.trim() || "";
+      if (field.required && !value) {
+        alert(`${field.label} is required.`);
+        return;
+      }
+      nextSettings[field.id] = value;
+    }
+
+    await this.persistConnectorSettings(connector, nextSettings);
+    this.setConnectorConnectionState(connector, { status: "disconnected", error: "" });
+    this.currentUser[meta.flag] = false;
+    await this.persistCurrentUserProfile();
+    this.hideModal("modal-connector-settings");
+    this.renderProfile();
+    if (this.currentView === "colony-detail" && this.activeColonyTab === "colony-tab-sensors") {
+      this.renderColonySensorConnectorPanel();
+    }
+  }
+
   // User Profile and Rules Settings
   renderProfile() {
     const u = this.currentUser;
@@ -6035,6 +6957,10 @@ class AntaiApp {
     document.getElementById("profile-username").value = u.username;
     document.getElementById("profile-email").value = u.email;
     document.getElementById("profile-newsletter").checked = u.newsletter;
+    const profileLogLevel = document.getElementById("profile-log-level");
+    if (profileLogLevel) {
+      profileLogLevel.value = this.getAppLogLevel();
+    }
 
     // Automation Rules list rendering
     const rulesListEl = document.getElementById("automation-rules-list");
@@ -6063,22 +6989,87 @@ class AntaiApp {
       }
     }
 
-    // Connectors indicators
-    const hasHA = this.currentUser.haConnected;
-    const hasJeedom = this.currentUser.jeedomConnected;
-    const hasDomoticz = this.currentUser.domoticzConnected;
-
-    document.getElementById("ha-status-label").innerText = `Status: ${hasHA ? 'Connected ✅' : 'Disconnected ❌'}`;
-    document.getElementById("jeedom-status-label").innerText = `Status: ${hasJeedom ? 'Connected ✅' : 'Disconnected ❌'}`;
-    document.getElementById("domoticz-status-label").innerText = `Status: ${hasDomoticz ? 'Connected ✅' : 'Disconnected ❌'}`;
+    this.renderConnectorCardState("ha");
+    this.renderConnectorCardState("jeedom");
+    this.renderConnectorCardState("domoticz");
   }
 
-  toggleConnector(connector) {
-    if (connector === 'ha') this.currentUser.haConnected = !this.currentUser.haConnected;
-    if (connector === 'jeedom') this.currentUser.jeedomConnected = !this.currentUser.jeedomConnected;
-    if (connector === 'domoticz') this.currentUser.domoticzConnected = !this.currentUser.domoticzConnected;
-    this.saveData();
+  buildConnectorTestConfig(connector, overrideSettings = null) {
+    const settings = overrideSettings && typeof overrideSettings === "object"
+      ? overrideSettings
+      : this.getConnectorSettings(connector);
+    if (connector === "ha") {
+      return {
+        type: "home_assistant",
+        baseUrl: settings.baseUrl || "",
+        accessToken: settings.accessToken || ""
+      };
+    }
+    if (connector === "jeedom") {
+      return {
+        type: "jeedom",
+        baseUrl: settings.baseUrl || "",
+        apiKey: settings.apiKey || ""
+      };
+    }
+    if (connector === "domoticz") {
+      return {
+        type: "domoticz",
+        baseUrl: settings.baseUrl || "",
+        username: settings.username || "",
+        password: settings.password || ""
+      };
+    }
+    return null;
+  }
+
+  async toggleConnector(connector) {
+    if (!this.currentUser) return;
+    const meta = this.getConnectorMeta(connector);
+    if (!meta) return;
+    const connected = Boolean(this.currentUser[meta.flag]);
+    if (connected) {
+      this.currentUser[meta.flag] = false;
+      this.setConnectorConnectionState(connector, { status: "disconnected", error: "" });
+      await this.persistCurrentUserProfile();
+      this.renderProfile();
+      return;
+    }
+    if (!this.isConnectorConfigured(connector)) {
+      alert(`Open ${meta.label} settings and fill the required API parameters before connecting.`);
+      return;
+    }
+    const config = this.buildConnectorTestConfig(connector);
+    if (!config) return;
+    const buttonEl = document.getElementById(meta.buttonId);
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.innerText = "Connecting...";
+    }
+    let payload = null;
+    try {
+      payload = await this.apiRequest("/api/connectors/test", {
+        method: "POST",
+        body: JSON.stringify({ config })
+      });
+    } catch (err) {
+      payload = { ok: false, error: err.message || "Connector connection failed." };
+    }
+    if (payload && payload.ok) {
+      this.currentUser[meta.flag] = true;
+      this.setConnectorConnectionState(connector, { status: "connected", error: "" });
+    } else {
+      this.currentUser[meta.flag] = false;
+      this.setConnectorConnectionState(connector, {
+        status: "failure",
+        error: payload && payload.error ? payload.error : "Connector connection failed."
+      });
+    }
+    await this.persistCurrentUserProfile();
     this.renderProfile();
+    if (buttonEl) {
+      buttonEl.disabled = false;
+    }
   }
 
   // --- Smart Local AI Advice Generator ---
@@ -6501,10 +7492,58 @@ class AntaiApp {
     });
   }
 
+  populateZoneSensorOptions(selectedTemp = "", selectedHumidity = "") {
+    const tempSelect = document.getElementById("zone-temp-sensor");
+    const humSelect = document.getElementById("zone-hum-sensor");
+    if (!tempSelect || !humSelect) return;
+
+    const col = this.getSelectedColony();
+    const config = this.getColonySensorConnectorConfig(col);
+    const items = this.getDiscoveredConnectorItems(col ? col.id : "");
+
+    let tempItems = items.filter(item => item.kind === "temperature" || item.unit === "°C" || item.unit === "C");
+    let humItems = items.filter(item => item.kind === "humidity" || item.unit === "%");
+
+    if (!tempItems.length && config.type === "home_assistant" && config.temperatureEntityId) {
+      tempItems = [{ id: config.temperatureEntityId, label: config.temperatureEntityId }];
+    }
+    if (!humItems.length && config.type === "home_assistant" && config.humidityEntityId) {
+      humItems = [{ id: config.humidityEntityId, label: config.humidityEntityId }];
+    }
+    if (!tempItems.length && config.type === "jeedom" && config.temperatureCmdId) {
+      tempItems = [{ id: config.temperatureCmdId, label: `Command ${config.temperatureCmdId}` }];
+    }
+    if (!humItems.length && config.type === "jeedom" && config.humidityCmdId) {
+      humItems = [{ id: config.humidityCmdId, label: `Command ${config.humidityCmdId}` }];
+    }
+    if (!tempItems.length && config.type === "domoticz" && config.temperatureIdx) {
+      tempItems = [{ id: config.temperatureIdx, label: `IDX ${config.temperatureIdx}` }];
+    }
+    if (!humItems.length && config.type === "domoticz" && config.humidityIdx) {
+      humItems = [{ id: config.humidityIdx, label: `IDX ${config.humidityIdx}` }];
+    }
+    if (!tempItems.length) {
+      tempItems = [
+        { id: "sensor-temp-1", label: "Main Temperature Probe 1" },
+        { id: "sensor-temp-2", label: "Aux Temperature Probe 2" }
+      ];
+    }
+    if (!humItems.length) {
+      humItems = [
+        { id: "sensor-hum-1", label: "Chamber Humidity Gauge 1" },
+        { id: "sensor-hum-2", label: "Aux Humidity Gauge 2" }
+      ];
+    }
+
+    tempSelect.innerHTML = `<option value="">None</option>${tempItems.map(item => `<option value="${escapeHtml(String(item.id))}" ${item.id === selectedTemp ? "selected" : ""}>${escapeHtml(item.label || item.id)}</option>`).join("")}`;
+    humSelect.innerHTML = `<option value="">None</option>${humItems.map(item => `<option value="${escapeHtml(String(item.id))}" ${item.id === selectedHumidity ? "selected" : ""}>${escapeHtml(item.label || item.id)}</option>`).join("")}`;
+  }
+
   showAddZoneModal() {
     this.editingZoneId = null;
     const form = document.getElementById("add-zone-form");
     if (form) form.reset();
+    this.populateZoneSensorOptions();
     this.navigate('add-zone');
   }
 
@@ -6514,8 +7553,7 @@ class AntaiApp {
     this.editingZoneId = zoneId;
     document.getElementById("zone-name-input").value = item.name || "";
     document.getElementById("zone-desc-input").value = item.desc || "";
-    document.getElementById("zone-temp-sensor").value = item.tempSensor || "";
-    document.getElementById("zone-hum-sensor").value = item.humSensor || "";
+    this.populateZoneSensorOptions(item.tempSensor || "", item.humSensor || "");
     document.getElementById("zone-x").value = item.x ?? 30;
     document.getElementById("zone-y").value = item.y ?? 40;
     document.getElementById("zone-width").value = item.width ?? 25;
@@ -6638,19 +7676,57 @@ class AntaiApp {
   }
 
   // Action methods
-  archiveColony(colId) {
+  async archiveColony(colId) {
     if (!this.hasPermission("delete_colony")) {
       alert("You do not have permission to delete/archive colonies in this project.");
       return;
     }
-    if (confirm("Are you sure you want to archive this colony? It will be hidden from the active list.")) {
-      const col = this.colonies.find(c => c.id === colId);
-      if (col) {
-        col.status = "archived";
-        this.saveData();
-        this.navigate("colonies");
-      }
+    const col = this.colonies.find(c => c.id === colId);
+    if (!col) return;
+    const nextStatus = col.status === "archived" ? "healthy" : "archived";
+    const prompt = nextStatus === "archived"
+      ? "Are you sure you want to archive this colony? It will be hidden from the active list."
+      : "Are you sure you want to unarchive this colony and return it to the active list?";
+    if (!confirm(prompt)) {
+      return;
     }
+    col.status = nextStatus;
+    await this.writeRecord("colonies", col);
+    this.renderSidebar();
+    if (nextStatus === "archived") {
+      this.navigate("colonies");
+    } else {
+      this.renderColonyDetail();
+    }
+  }
+
+  async deleteColony(colId) {
+    if (!this.hasPermission("delete_colony")) {
+      alert("You do not have permission to delete colonies in this project.");
+      return;
+    }
+    const col = this.colonies.find(c => c.id === colId);
+    if (!col) return;
+    if (!confirm(`Are you sure you want to permanently delete "${col.name}"?\nThis will remove the colony and all linked events, reminders, maps, zones, automation rules, and uploaded photos.`)) {
+      return;
+    }
+
+    const colonyMaps = this.maps.filter(map => map.colonyId === col.id);
+    const deletedMapIds = new Set(colonyMaps.map(map => map.id));
+    const deletedZoneIds = new Set(this.zones.filter(zone => deletedMapIds.has(zone.mapId)).map(zone => zone.id));
+
+    await this.deleteRecord("colonies", col.id, col);
+    this.colonies = this.colonies.filter(c => c.id !== col.id);
+    this.events = this.events.filter(e => e.colonyId !== col.id);
+    this.reminders = this.reminders.filter(r => r.colonyId !== col.id);
+    this.maps = this.maps.filter(m => m.colonyId !== col.id);
+    this.zones = this.zones.filter(z => !deletedMapIds.has(z.mapId));
+    this.automationRules = this.automationRules.filter(rule => !deletedZoneIds.has(rule.zoneId));
+    if (this.selectedColonyId === col.id) {
+      this.selectedColonyId = null;
+    }
+    this.renderSidebar();
+    this.navigate("colonies");
   }
 
   completeReminder(reminderId) {
@@ -6761,7 +7837,7 @@ class AntaiApp {
     } else if (this.workspaceDir) {
       this.writeWorkspaceFile(["app", "connectors"], "settings.md", { geminiApiKey: key || "" });
     }
-    this.navigate('dashboard');
+    this.finishTransientView();
     this.renderAIAssistant();
   }
 
@@ -6789,8 +7865,7 @@ class AntaiApp {
       } else if (tabId === "colony-tab-gallery") {
         this.renderColonyGallery();
       } else if (tabId === "colony-tab-sensors") {
-        this.updateSensorWidgets();
-        this.renderColonySensorChart();
+        this.renderColonySensorsTab();
       } else if (tabId === "colony-tab-ai") {
         this.generateColonyAIInsights();
       }
@@ -6950,7 +8025,7 @@ class AntaiApp {
           item._colonyFolder = name;
           item._fileName = "colony.md";
         } catch (e) {
-          console.error("Error resolving colony folder:", e);
+          this.logError("workspace.colony_folder.resolve_failed", "Error resolving colony folder.", { error: e.message || String(e) });
           item._colonyFolder = item.uuid || item.id;
           item._fileName = "colony.md";
         }
@@ -7007,7 +8082,7 @@ class AntaiApp {
           }
           item._fileName = name;
         } catch (e) {
-          console.error("Error resolving unique file name:", e);
+          this.logError("workspace.filename.resolve_failed", "Error resolving unique file name.", { error: e.message || String(e) });
           item._fileName = `${item.uuid || item.id}.md`;
         }
       }
@@ -7047,7 +8122,7 @@ class AntaiApp {
     if (this.workspaceDir) {
       if (collection === "projects") {
         const slug = record && record._slug ? record._slug : sanitizeSlug(itemId);
-        await this.deleteWorkspaceFile(["projects", slug], "project.md");
+        await this.deleteWorkspaceEntry(["projects"], slug, true);
         return;
       }
 
@@ -7061,7 +8136,8 @@ class AntaiApp {
       } else if (collection === "sightings") {
         pathArray = ["app", "sightings"];
       } else if (collection === "colonies") {
-        pathArray = ["projects", projectSlug, colonyFolder];
+        await this.deleteWorkspaceEntry(["projects", projectSlug], colonyFolder, true);
+        return;
       } else {
         let subfolder = "others";
         if (collection === "events") subfolder = "events";
@@ -7096,7 +8172,7 @@ class AntaiApp {
       this.renderSidebar();
       this.onViewRender(this.currentView);
     } catch (err) {
-      console.error("Directory selection failed:", err);
+      this.logError("workspace.select_failed", "Directory selection failed.", { error: err.message || String(err) });
       alert("Failed to connect directory: " + err.message);
     }
   }
@@ -7144,7 +8220,7 @@ class AntaiApp {
           }
         }
       } catch (e) {
-        console.warn("Failed to load user profile from workspace:", e);
+        this.logWarn("workspace.users.load_failed", "Failed to load user profile from workspace.", { error: e.message || String(e) });
       }
 
       // 2. Sync shared species sheets from species/*.md
@@ -7210,19 +8286,44 @@ class AntaiApp {
         this.newsList = [];
       }
 
-      // 4. Sync API Keys / Connectors from app/connectors/settings.md
+      // 4. Sync API keys and connector configs from app/connectors/
       try {
         const appDir = await this.workspaceDir.getDirectoryHandle("app", { create: true });
+        try {
+          const settingsHandle = await appDir.getFileHandle("settings.json", { create: false });
+          const settingsFile = await settingsHandle.getFile();
+          const settingsData = JSON.parse(await settingsFile.text());
+          this.appSettings = {
+            logLevel: this.normalizeLogLevel(settingsData && settingsData.logLevel)
+          };
+        } catch (e) {}
         const connectorsDir = await appDir.getDirectoryHandle("connectors", { create: true });
-        const settingsHandle = await connectorsDir.getFileHandle("settings.md", { create: false });
-        const file = await settingsHandle.getFile();
-        const text = await file.text();
-        const parsed = parseMarkdownWithFrontMatter(text);
-        if (parsed.metadata.geminiApiKey) {
-          this.apiKeys.gemini = parsed.metadata.geminiApiKey;
+        this.connectorSettings = {};
+
+        try {
+          const settingsHandle = await connectorsDir.getFileHandle("settings.md", { create: false });
+          const file = await settingsHandle.getFile();
+          const text = await file.text();
+          const parsed = parseMarkdownWithFrontMatter(text);
+          if (parsed.metadata.geminiApiKey) {
+            this.apiKeys.gemini = parsed.metadata.geminiApiKey;
+          }
+        } catch (e) {}
+
+        for await (const entry of connectorsDir.values()) {
+          if (entry.kind !== "file" || !entry.name.endsWith(".json")) continue;
+          try {
+            const file = await entry.getFile();
+            const parsed = JSON.parse(await file.text());
+            if (parsed && parsed.type) {
+              this.connectorSettings[parsed.type] = parsed;
+            }
+          } catch (e) {
+            this.logWarn("workspace.connector_config.load_failed", "Failed to load connector config from workspace.", { fileName: entry.name, error: e.message || String(e) });
+          }
         }
       } catch (e) {
-        console.warn("No connectors settings found in workspace");
+        this.logWarn("workspace.connectors.load_failed", "No connectors settings found in workspace.", { error: e.message || String(e) });
       }
 
       // Helper to read all .md files in a folder and return parsed array
@@ -7261,7 +8362,7 @@ class AntaiApp {
           this.sightings = sightingsList.map(s => ({ id: s.uuid, ...s }));
         }
       } catch (e) {
-        console.warn("Failed to read sightings in workspace:", e);
+        this.logWarn("workspace.sightings.load_failed", "Failed to read sightings in workspace.", { error: e.message || String(e) });
       }
 
       // 4. Scan Projects and Colonies
@@ -7324,7 +8425,7 @@ class AntaiApp {
                   colonyData.projectId = colonyData.projectId || projectData.uuid;
                   coloniesList.push(colonyData);
                 } catch (e) {
-                  console.warn(`No colony.md in ${colEntry.name}`);
+                  this.logWarn("workspace.colony_file.missing", "No colony.md found in workspace colony folder.", { colonyFolder: colEntry.name });
                 }
 
                 // Read subfolders
@@ -7351,7 +8452,7 @@ class AntaiApp {
           }
         }
       } catch (e) {
-        console.warn("Error scanning projects directory:", e);
+        this.logWarn("workspace.projects.scan_failed", "Error scanning projects directory.", { error: e.message || String(e) });
       }
 
       if (this.projects.length > 0) {
@@ -7373,7 +8474,7 @@ class AntaiApp {
       this.updateWorkspaceStatusUI();
       await this.initializeSpeciesCatalog();
     } catch (err) {
-      console.error("Syncing from folder failed:", err);
+      this.logError("workspace.sync_failed", "Syncing from folder failed.", { error: err.message || String(err) });
       throw err;
     }
   }
@@ -7404,7 +8505,7 @@ class AntaiApp {
       await writable.close();
       return true;
     } catch (e) {
-      console.error(`Error saving ${pathArray.join("/")}/${fileName} to workspace:`, e);
+      this.logError("workspace.file.save_failed", "Error saving file to workspace.", { path: `${pathArray.join("/")}/${fileName}`, error: e.message || String(e) });
       return false;
     }
   }
@@ -7418,7 +8519,20 @@ class AntaiApp {
       }
       await currentDir.removeEntry(fileName);
     } catch (e) {
-      console.error(`Error deleting ${pathArray.join("/")}/${fileName} from workspace:`, e);
+      this.logError("workspace.file.delete_failed", "Error deleting file from workspace.", { path: `${pathArray.join("/")}/${fileName}`, error: e.message || String(e) });
+    }
+  }
+
+  async deleteWorkspaceEntry(pathArray, entryName, recursive = false) {
+    if (!this.workspaceDir) return;
+    try {
+      let currentDir = this.workspaceDir;
+      for (const segment of pathArray) {
+        currentDir = await currentDir.getDirectoryHandle(segment, { create: false });
+      }
+      await currentDir.removeEntry(entryName, recursive ? { recursive: true } : undefined);
+    } catch (e) {
+      this.logError("workspace.entry.delete_failed", "Error deleting workspace entry.", { path: `${pathArray.join("/")}/${entryName}`, error: e.message || String(e) });
     }
   }
 
@@ -7614,6 +8728,7 @@ class AntaiApp {
     if (addColonyForm) {
       addColonyForm.onsubmit = async (e) => {
         e.preventDefault();
+        if (this.isSavingColony) return;
         const name = document.getElementById("colony-name-input").value;
         const species = document.getElementById("colony-species-select").value;
         const queens = document.getElementById("colony-queens-input").value;
@@ -7640,146 +8755,175 @@ class AntaiApp {
         }
 
         const projectId = document.getElementById("colony-project-select").value;
+        const submitButton = e.submitter || addColonyForm.querySelector('button[type="submit"]');
 
         let savedColony = null;
-        if (this.editingColonyId) {
-          // Edit mode
-          const col = this.colonies.find(c => c.id === this.editingColonyId);
-          if (col) {
-            const oldProjectId = col.projectId;
-            if (oldProjectId && oldProjectId !== projectId) {
-              // Delete old colony file if workspace connected
-              if (this.workspaceDir) {
-                this.deleteRecord("colonies", col.id, col);
-              }
-              // Update sub-records' project ID and move files on disk
-              this.events.filter(e => e.colonyId === col.id).forEach(e => {
-                const oldRecord = { ...e };
-                e.projectId = projectId;
-                if (this.workspaceDir) {
-                  this.deleteRecord("events", e.id, oldRecord);
-                  this.writeRecord("events", e);
-                }
-              });
-              
-              this.reminders.filter(r => r.colonyId === col.id).forEach(r => {
-                const oldRecord = { ...r };
-                r.projectId = projectId;
-                if (this.workspaceDir) {
-                  this.deleteRecord("reminders", r.id, oldRecord);
-                  this.writeRecord("reminders", r);
-                }
-              });
-
-              this.maps.filter(m => m.colonyId === col.id).forEach(m => {
-                const oldRecord = { ...m };
-                m.projectId = projectId;
-                if (this.workspaceDir) {
-                  this.deleteRecord("maps", m.id, oldRecord);
-                  this.writeRecord("maps", m);
-                }
-              });
-
-              this.zones.filter(z => this.maps.some(m => m.id === z.mapId && m.colonyId === col.id)).forEach(z => {
-                const oldRecord = { ...z };
-                z.projectId = projectId;
-                if (this.workspaceDir) {
-                  this.deleteRecord("zones", z.id, oldRecord);
-                  this.writeRecord("zones", z);
-                }
-              });
-
-              this.automationRules.filter(r => this.zones.some(z => z.id === r.zoneId && this.maps.some(m => m.id === z.mapId && m.colonyId === col.id))).forEach(r => {
-                const oldRecord = { ...r };
-                r.projectId = projectId;
-                if (this.workspaceDir) {
-                  this.deleteRecord("rules", r.id, oldRecord);
-                  this.writeRecord("rules", r);
-                }
-              });
-            }
-            col.projectId = projectId;
-            col.name = name;
-            col.species = species;
-            col.queens = queens;
-            col.workers = workers;
-            col.founded = founded;
-            col.status = status;
-            col.notes = notes;
-            col.diet = diet;
-            col.setup = setup;
-            col.photo = photo;
-            col.customPhotos = customPhotos;
-            col.galleryItems = customPhotos.map((path, index) => ({
-              path,
-              title: this.getPhotoDisplayName(path, index),
-              description: ""
-            }));
-            col.isPublic = isPublic;
-            col.publicPageHtml = publicPageHtml;
-            savedColony = col;
-          }
-          this.editingColonyId = null;
-        } else {
-          // Add mode
-          const newCol = {
-            id: generateUUID(),
-            uuid: generateUUID(),
-            projectId: projectId,
-            name, species, queens, workers, founded, status, notes, diet, setup, photo, customPhotos,
-            galleryItems: customPhotos.map((path, index) => ({
-              path,
-              title: this.getPhotoDisplayName(path, index),
-              description: ""
-            })),
-            isPublic, publicPageHtml
-          };
-          this.colonies.push(newCol);
-          savedColony = newCol;
+        const wasEditingColonyId = this.editingColonyId;
+        let colonyPersisted = false;
+        this.isSavingColony = true;
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.dataset.originalText = submitButton.textContent;
+          submitButton.textContent = "Saving...";
         }
 
-        if (savedColony) {
-          await this.writeRecord("colonies", savedColony);
-          if (pendingPhotoEntries.length > 0) {
-            const finalPhotoPaths = [];
-            for (let i = 0; i < photoEntries.length; i++) {
-              const entry = photoEntries[i];
-              if (entry.kind === "stored") {
-                finalPhotoPaths.push(entry.src);
-              } else if (entry.kind === "pending" && entry.file) {
-                const uploadedPath = await this.uploadColonyPhotoFile(savedColony, entry.file, i);
-                finalPhotoPaths.push(uploadedPath);
-                this.photoMetadataCache[uploadedPath] = this.buildPhotoMetadataFromFile(entry.file, entry.src);
+        try {
+          if (this.editingColonyId) {
+            // Edit mode
+            const col = this.colonies.find(c => c.id === this.editingColonyId);
+            if (col) {
+              const oldProjectId = col.projectId;
+              if (oldProjectId && oldProjectId !== projectId) {
+                // Delete old colony file if workspace connected
+                if (this.workspaceDir) {
+                  this.deleteRecord("colonies", col.id, col);
+                }
+                // Update sub-records' project ID and move files on disk
+                this.events.filter(e => e.colonyId === col.id).forEach(e => {
+                  const oldRecord = { ...e };
+                  e.projectId = projectId;
+                  if (this.workspaceDir) {
+                    this.deleteRecord("events", e.id, oldRecord);
+                    this.writeRecord("events", e);
+                  }
+                });
+
+                this.reminders.filter(r => r.colonyId === col.id).forEach(r => {
+                  const oldRecord = { ...r };
+                  r.projectId = projectId;
+                  if (this.workspaceDir) {
+                    this.deleteRecord("reminders", r.id, oldRecord);
+                    this.writeRecord("reminders", r);
+                  }
+                });
+
+                this.maps.filter(m => m.colonyId === col.id).forEach(m => {
+                  const oldRecord = { ...m };
+                  m.projectId = projectId;
+                  if (this.workspaceDir) {
+                    this.deleteRecord("maps", m.id, oldRecord);
+                    this.writeRecord("maps", m);
+                  }
+                });
+
+                this.zones.filter(z => this.maps.some(m => m.id === z.mapId && m.colonyId === col.id)).forEach(z => {
+                  const oldRecord = { ...z };
+                  z.projectId = projectId;
+                  if (this.workspaceDir) {
+                    this.deleteRecord("zones", z.id, oldRecord);
+                    this.writeRecord("zones", z);
+                  }
+                });
+
+                this.automationRules.filter(r => this.zones.some(z => z.id === r.zoneId && this.maps.some(m => m.id === z.mapId && m.colonyId === col.id))).forEach(r => {
+                  const oldRecord = { ...r };
+                  r.projectId = projectId;
+                  if (this.workspaceDir) {
+                    this.deleteRecord("rules", r.id, oldRecord);
+                    this.writeRecord("rules", r);
+                  }
+                });
               }
-            }
-            savedColony.customPhotos = dedupePhotoList(finalPhotoPaths);
-            savedColony.galleryItems = finalPhotoPaths.map((path, index) => {
-              const existingItem = savedColony.galleryItems && savedColony.galleryItems[index];
-              return {
+              col.projectId = projectId;
+              col.name = name;
+              col.species = species;
+              col.queens = queens;
+              col.workers = workers;
+              col.founded = founded;
+              col.status = status;
+              col.notes = notes;
+              col.diet = diet;
+              col.setup = setup;
+              col.photo = photo;
+              col.customPhotos = customPhotos;
+              col.galleryItems = customPhotos.map((path, index) => ({
                 path,
-                title: existingItem && existingItem.title ? existingItem.title : this.getPhotoDisplayName(path, index),
-                description: existingItem && existingItem.description ? existingItem.description : ""
-              };
-            });
-            savedColony.photo = selectedPhotoEntry
-              ? (finalPhotoPaths[this.colonySelectedPhotoIndex] || presetPhoto)
-              : (savedColony.customPhotos[0] || presetPhoto);
+                title: this.getPhotoDisplayName(path, index),
+                description: ""
+              }));
+              col.isPublic = isPublic;
+              col.publicPageHtml = publicPageHtml;
+              savedColony = col;
+            }
+            this.editingColonyId = null;
+          } else {
+            // Add mode
+            const colonyUuid = generateUUID();
+            const newCol = {
+              id: colonyUuid,
+              uuid: colonyUuid,
+              projectId: projectId,
+              name, species, queens, workers, founded, status, notes, diet, setup, photo, customPhotos,
+              galleryItems: customPhotos.map((path, index) => ({
+                path,
+                title: this.getPhotoDisplayName(path, index),
+                description: ""
+              })),
+              isPublic, publicPageHtml
+            };
+            this.colonies.push(newCol);
+            savedColony = newCol;
+          }
+
+          if (savedColony) {
             await this.writeRecord("colonies", savedColony);
+            colonyPersisted = true;
+            if (pendingPhotoEntries.length > 0) {
+              const finalPhotoPaths = [];
+              for (let i = 0; i < photoEntries.length; i++) {
+                const entry = photoEntries[i];
+                if (entry.kind === "stored") {
+                  finalPhotoPaths.push(entry.src);
+                } else if (entry.kind === "pending" && entry.file) {
+                  const uploadedPath = await this.uploadColonyPhotoFile(savedColony, entry.file, i);
+                  finalPhotoPaths.push(uploadedPath);
+                  this.photoMetadataCache[uploadedPath] = this.buildPhotoMetadataFromFile(entry.file, entry.src);
+                }
+              }
+              savedColony.customPhotos = dedupePhotoList(finalPhotoPaths);
+              savedColony.galleryItems = finalPhotoPaths.map((path, index) => {
+                const existingItem = savedColony.galleryItems && savedColony.galleryItems[index];
+                return {
+                  path,
+                  title: existingItem && existingItem.title ? existingItem.title : this.getPhotoDisplayName(path, index),
+                  description: existingItem && existingItem.description ? existingItem.description : ""
+                };
+              });
+              savedColony.photo = selectedPhotoEntry
+                ? (finalPhotoPaths[this.colonySelectedPhotoIndex] || presetPhoto)
+                : (savedColony.customPhotos[0] || presetPhoto);
+              await this.writeRecord("colonies", savedColony);
+            }
+          }
+
+          addColonyForm.reset();
+          this.colonyPhotoEntries.forEach(entry => {
+            if (entry.kind === "pending" && entry.src) {
+              URL.revokeObjectURL(entry.src);
+            }
+          });
+          this.colonyPhotoEntries = [];
+          this.colonyPhotosBuffer = [];
+          this.colonySelectedPhotoIndex = -1;
+          this.renderColonyPhotosPreview();
+          this.renderSidebar();
+          this.finishTransientView();
+        } catch (err) {
+          if (colonyPersisted && savedColony && !wasEditingColonyId) {
+            this.editingColonyId = savedColony.id;
+            alert(`Colony saved, but finishing the save failed: ${err.message}. Retry will update the existing colony instead of creating a new one.`);
+          } else {
+            this.editingColonyId = wasEditingColonyId;
+            alert(`Failed to save colony: ${err.message}`);
+          }
+        } finally {
+          this.isSavingColony = false;
+          if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent = submitButton.dataset.originalText || "Save Colony";
+            delete submitButton.dataset.originalText;
           }
         }
-        addColonyForm.reset();
-        this.colonyPhotoEntries.forEach(entry => {
-          if (entry.kind === "pending" && entry.src) {
-            URL.revokeObjectURL(entry.src);
-          }
-        });
-        this.colonyPhotoEntries = [];
-        this.colonyPhotosBuffer = [];
-        this.colonySelectedPhotoIndex = -1;
-        this.renderColonyPhotosPreview();
-        this.navigate('dashboard');
-        this.renderSidebar();
-        this.onViewRender(this.currentView);
       };
     }
 
@@ -7819,8 +8963,10 @@ class AntaiApp {
           }
           this.editingEventId = null;
         } else {
+          const eventUuid = generateUUID();
           const newEvent = {
-            id: generateUUID(),
+            id: eventUuid,
+            uuid: eventUuid,
             projectId: this.activeProjectId,
             colonyId, type, dateTime, notes
           };
@@ -7844,8 +8990,7 @@ class AntaiApp {
           }
         }
 
-        this.navigate('dashboard');
-        this.renderColonyDetail();
+        this.finishTransientView();
       };
     }
 
@@ -7878,8 +9023,10 @@ class AntaiApp {
           }
           this.editingReminderId = null;
         } else {
+          const reminderUuid = generateUUID();
           const newReminder = {
-            id: generateUUID(),
+            id: reminderUuid,
+            uuid: reminderUuid,
             projectId: this.activeProjectId,
             colonyId, title, dueDate, repeat, notes,
             status: "pending"
@@ -7891,8 +9038,7 @@ class AntaiApp {
         if (savedReminder) {
           this.writeRecord("reminders", savedReminder);
         }
-        this.navigate('dashboard');
-        this.onViewRender(this.currentView);
+        this.finishTransientView();
       };
     }
 
@@ -7948,8 +9094,10 @@ class AntaiApp {
           }
           this.editingMapId = null;
         } else {
+          const mapUuid = generateUUID();
           const newMap = {
-            id: generateUUID(),
+            id: mapUuid,
+            uuid: mapUuid,
             projectId: this.activeProjectId,
             colonyId: this.selectedColonyId,
             name, image
@@ -7962,8 +9110,7 @@ class AntaiApp {
           this.activeMapId = savedMap.id;
           this.writeRecord("maps", savedMap);
         }
-        this.navigate('dashboard');
-        this.renderColonyMaps();
+        this.finishTransientView();
       };
     }
 
@@ -8008,8 +9155,10 @@ class AntaiApp {
           }
           this.editingZoneId = null;
         } else {
+          const zoneUuid = generateUUID();
           const newZone = {
-            id: generateUUID(),
+            id: zoneUuid,
+            uuid: zoneUuid,
             projectId: this.activeProjectId,
             mapId: this.activeMapId,
             name, desc, tempSensor, humSensor, x, y, width, height
@@ -8021,8 +9170,7 @@ class AntaiApp {
         if (savedZone) {
           this.writeRecord("zones", savedZone);
         }
-        this.navigate('dashboard');
-        this.renderColonyMaps();
+        this.finishTransientView();
       };
     }
 
@@ -8040,16 +9188,17 @@ class AntaiApp {
         const threshold = document.getElementById("auto-threshold").value;
         const action = document.getElementById("auto-action-input").value;
 
+        const ruleUuid = generateUUID();
         const newRule = {
-          id: generateUUID(),
+          id: ruleUuid,
+          uuid: ruleUuid,
           projectId: this.activeProjectId,
           trigger, zoneId, threshold, action, active: true
         };
 
         this.automationRules.push(newRule);
         this.writeRecord("rules", newRule);
-        this.navigate('dashboard');
-        this.renderProfile();
+        this.finishTransientView();
       };
     }
 
@@ -8064,16 +9213,17 @@ class AntaiApp {
         const y = parseInt(document.getElementById("sight-y").value);
         const notes = document.getElementById("sight-notes").value;
 
+        const sightingUuid = generateUUID();
         const newSighting = {
-          id: generateUUID(),
+          id: sightingUuid,
+          uuid: sightingUuid,
           species, location, x, y, notes,
           date: new Date().toISOString().slice(0, 10)
         };
 
         this.sightings.push(newSighting);
         this.writeRecord("sightings", newSighting);
-        this.navigate('dashboard');
-        this.renderSwarmMap();
+        this.finishTransientView();
       };
     }
 
@@ -8107,12 +9257,9 @@ class AntaiApp {
 
         this.projects.push(newProj);
         await this.writeRecord("projects", newProj);
-
-        this.navigate('dashboard');
         document.getElementById("project-name-input").value = "";
-        
-        // Select the newly created project
         this.setActiveProject(newProj.uuid);
+        this.finishTransientView();
         alert(`Project "${name}" created successfully!`);
       };
     }
@@ -8126,6 +9273,7 @@ class AntaiApp {
         this.currentUser.username = document.getElementById("profile-username").value;
         this.currentUser.email = document.getElementById("profile-email").value;
         this.currentUser.newsletter = document.getElementById("profile-newsletter").checked;
+        this.appSettings.logLevel = this.normalizeLogLevel(document.getElementById("profile-log-level")?.value);
 
         this.saveData();
         if (!this.isFileMode()) {
@@ -8151,6 +9299,7 @@ class AntaiApp {
             await this.persistPasswordStore();
           }
         }
+        await this.persistAppSettings();
         this.renderSidebarFooter();
         alert("Settings updated successfully!");
       };
@@ -8162,7 +9311,7 @@ class AntaiApp {
     const container = document.getElementById("public-directory-container");
     if (!container) return;
 
-    const publicProjects = this.projects.filter(p => p.isPublic);
+    const publicProjects = this.projects.filter(p => p.isPublic && p.status !== "archived");
     const publicColonies = this.colonies.filter(c => c.isPublic && c.status !== "archived");
 
     if (publicProjects.length === 0 && publicColonies.length === 0) {
@@ -8209,7 +9358,7 @@ class AntaiApp {
     let html = "The requested public page could not be found or is no longer public.";
 
     if (type === "project") {
-      const p = this.projects.find(p => p.uuid === id && p.isPublic);
+      const p = this.projects.find(p => p.uuid === id && p.isPublic && p.status !== "archived");
       if (p) {
         title = p.name;
         sub = "Public Project Page";
@@ -8233,5 +9382,5 @@ class AntaiApp {
 // Instantiate and expose globally
 var app = window.app = new AntaiApp();
 window.app.init().catch(err => {
-  console.error("Antai initialization failed:", err);
+  app.logError("app.init.failed", "Antai initialization failed.", { error: err.message || String(err) });
 });

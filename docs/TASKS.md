@@ -2,221 +2,65 @@
 
 ## 1. Purpose
 
-This document breaks the current `Antai` scope into implementation tasks.
+This document tracks TODO work from the current implemented state of `Antai`.
 
-It is intended as a practical execution checklist and should evolve with development.
+It intentionally separates active product reality from deferred or incomplete work.
 
-## 2. Phase 0: Project Foundation
+## 2. Documentation Alignment
 
-- Create base repository structure.
-- Add root documentation links and update the main README.
-- Define the application module layout.
-- Define naming conventions.
-- Define minimal local development workflow.
-- Define minimal deployment workflow.
-- Establish responsive layout shell.
-- Establish navigation shell.
+- Keep docs aligned with the implemented app, not only the original product vision.
+- Update architecture, design, and specification docs whenever major flows change.
+- Keep `README.md` and docs consistent about run modes and current capabilities.
 
-## 3. Phase 1: Core Product
+## 3. Product Hardening
 
-### 3.1 Authentication
+- Add tests for core auth, project, colony, reminder, and event flows.
+- Reduce logic concentration in `public/app.js` and `src/server.js`.
+- Tighten validation around file-backed record writes and deletes.
+- Improve consistency between project, colony, map, zone, and reminder linking rules.
+- Review public/private visibility rules for projects and colonies.
 
-- Implement signup flow.
-- Implement login flow.
-- Implement logout flow.
-- Implement email verification flow.
-- Implement profile page.
-- Implement newsletter preference handling.
-- Add optional social login placeholder path.
+## 4. Deferred Core Auth Work
 
-### 3.2 Dashboard
+- Add email verification.
+- Add optional social login.
+- Improve account state handling beyond the current local credential flow.
 
-- Build dashboard layout.
-- Add colony overview widget.
-- Add upcoming reminders widget.
-- Add overdue reminders widget.
-- Add recent activity widget.
-- Add AI entry shortcut.
+## 5. Deferred Media Work
 
-### 3.3 Colonies
+- Add video upload support.
+- Add playlist-oriented media browsing if still justified.
+- Expand photo management beyond the current gallery and primary-photo workflows.
 
-- Implement colony list page.
-- Implement create colony flow.
-- Implement edit colony flow.
-- Implement archive colony flow.
-- Implement colony detail page.
-- Add colony status presentation.
-- Add quick summary fields.
+## 6. Deferred Device and Display Work
 
-### 3.4 Colony Journal
+- Evaluate whether a passive TV/dashboard mode is still worth building.
+- Expand mobile UX only where the current responsive shell proves insufficient.
 
-- Implement journal data model.
-- Implement journal list/timeline view.
-- Implement add event flow.
-- Implement edit event flow.
-- Add event filtering.
-- Add event search.
+## 7. Deferred AI and LLM Work
 
-### 3.5 Reminders
+- Decide whether Gemini support should stay as a prompt/key workflow or become a fuller integration.
+- Define whether ChatGPT and Claude should be supported as real product integrations.
+- Improve AI output persistence and reuse if the current prompt workflow is not enough.
 
-- Implement reminder data model.
-- Implement reminder list views.
-- Implement create reminder flow.
-- Implement complete reminder action.
-- Implement snooze reminder action.
-- Implement overdue reminder state.
+## 8. Deferred Sensors and Automation Work
 
-### 3.6 Species and Care Sheets
+- Add real sensor ingestion and historical recording.
+- Define stable sensor-source and sensor-reading models.
+- Add meaningful threshold alerts backed by real data.
+- Decide which automation connector targets are worth supporting.
+- Implement real connector flows only after the data model is stable.
 
-- Implement species list view.
-- Implement species search.
-- Implement species detail view.
-- Implement favorite/save feature.
-- Support unknown species fallback.
+## 9. Deferred Community Work
 
-### 3.7 Photos
+- Evaluate whether moderation roles are needed.
+- Clarify how far public content and community workflows should go.
+- Keep broader social features deferred unless they clearly support the product.
 
-- Implement photo upload flow.
-- Implement video upload flow.
-- Implement colony photo gallery.
-- Implement event photo gallery.
-- Implement downloadable media actions.
-- Implement video playlist support.
-- Implement image detail view.
+## 10. Current UX and Content Enhancements
 
-### 3.8 Colony Maps
-
-- Define colony map data model.
-- Define colony zone data model.
-- Implement colony map list and detail flow.
-- Implement create map flow.
-- Implement zone creation and editing flow.
-- Implement zone visual placement flow.
-- Implement zone detail view.
-- Implement linking galleries to zones.
-- Implement linking playlists to zones.
-
-### 3.9 Responsive UX
-
-- Validate smartphone layout.
-- Validate tablet layout.
-- Validate laptop/desktop layout.
-- Add TV-friendly passive dashboard mode baseline.
-
-## 4. Phase 2: AI Features
-
-### 4.1 AI Assistant
-
-- Define AI assistant interaction model.
-- Implement colony-context prompt building.
-- Implement zone-context prompt building.
-- Implement AI assistant screen.
-- Implement suggested prompts.
-- Implement response rendering blocks.
-- Add save summary action.
-- Add create reminder from AI action.
-- Add add note from AI action.
-
-### 4.2 AI Image Analysis
-
-- Define image analysis input flow.
-- Implement analysis request flow.
-- Implement species recognition result view.
-- Implement ant count result view.
-- Implement brood detection result view.
-- Implement setup issue suggestion view.
-- Add saved analysis results storage.
-
-### 4.3 Smart Insights
-
-- Implement growth summary logic.
-- Implement care consistency summary logic.
-- Implement reminder completion summary logic.
-- Implement anomaly detection rules baseline.
-- Surface insights on colony detail and dashboard.
-
-## 5. Phase 3: Sensors and Automation
-
-### 5.1 Sensors
-
-- Define sensor source model.
-- Define sensor reading model.
-- Implement sensor connection UI.
-- Implement sensor-to-colony mapping UI.
-- Implement sensor-to-zone mapping UI.
-- Implement current values display.
-- Implement historical trend display.
-- Implement persistent sensor history recording.
-- Implement threshold alert display.
-
-### 5.2 Automation
-
-- Define automation connector model.
-- Add connector status view.
-- Add Home Assistant integration placeholder and workflow.
-- Add Jeedom integration placeholder and workflow.
-- Add Domoticz integration placeholder and workflow.
-- Implement readable automation rule UI.
-- Implement zone-linked automation mapping.
-
-### 5.3 Environment Intelligence
-
-- Combine species expectations with sensor values.
-- Surface environment mismatch warnings.
-- Add AI/environment recommendation entry point.
-- Surface zone-specific environment warnings.
-
-## 6. Phase 4: LLM Interoperability
-
-- Define LLM-readable data access layer.
-- Define stable colony summary format.
-- Define stable reminder summary format.
-- Define stable species/care sheet format.
-- Define stable AI result format.
-- Define stable sensor summary format.
-- Define stable map and zone summary format.
-- Support graphical conversational integration path.
-- Support CLI-oriented integration path.
-- Validate that core data stays readable outside the GUI.
-
-## 7. Phase 5: Community and Content
-
-### 7.1 Swarm Map
-
-- Define sighting model.
-- Implement add sighting flow.
-- Implement sightings list.
-- Implement sightings map view.
-- Implement sighting detail view.
-
-### 7.2 News and Content
-
-- Define article/content model.
-- Implement content list.
-- Implement content detail page.
-- Implement featured content block.
-
-### 7.3 Community Extensions
-
-- Evaluate partner/resource presentation.
-- Evaluate public showcase concept.
-- Defer direct messaging unless still aligned with simplicity goals.
-
-## 8. Cross-Cutting Tasks
-
-- Keep all major data readable in the web UI and LLM contexts.
-- Keep the install/update path lightweight.
-- Keep the repository structure clean and conventional.
-- Add tests for core user flows.
-- Add tests for AI and integration boundaries where practical.
-- Review all features against simplicity constraints before merging.
-
-## 9. Immediate Recommended Next Tasks
-
-- Finalize tech stack choices in line with simplicity constraints.
-- Scaffold the repository and application shell.
-- Implement authentication and profile baseline.
-- Implement colony list and colony detail baseline.
-- Implement journal and reminders baseline.
-- Add species/care sheet baseline.
-- Add initial responsive layout validation.
+- Refine project management workflows.
+- Improve colony detail tab UX where tabs exist but behavior is still shallow.
+- Improve map and zone authoring ergonomics.
+- Improve news feed editing and sync feedback.
+- Continue refining public pages and marketing copy based on the live UI direction.
